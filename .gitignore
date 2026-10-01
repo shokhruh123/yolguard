@@ -3,6 +3,8 @@
 *.jks
 *.keystore
 **/keystore.properties
+CREDENTIALS.local.md
+*.local.md
 
 # ===== Python =====
 __pycache__/
