@@ -1,0 +1,13 @@
+# Secrets — never commit the release keystore or its passwords
+keystore.properties
+*.jks
+*.keystore
+
+# Local Android config / build output
+local.properties
+.gradle/
+.jdk/
+build/
+app/build/
+*.log
+build.err

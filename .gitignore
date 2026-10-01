@@ -1,0 +1,48 @@
+# ===== Секреты — НИКОГДА не коммитить =====
+**/.env
+*.jks
+*.keystore
+**/keystore.properties
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# ===== Backend: локальные данные =====
+backend/yolguard.db
+backend/uploads/
+
+# ===== Admin (PyInstaller) =====
+admin/build/
+admin/dist/
+
+# ===== Android: сборка и локальные инструменты =====
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.jdk/
+android/*.log
+android/build.err
+
+# Полный Android SDK — это инструмент, не исходники (гигабайты)
+android-sdk/
+
+# ===== Готовые артефакты сборки =====
+*.apk
+*.aab
+
+# ===== Прочее =====
+Logs/
+Temp/
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.idea/
+.vscode/

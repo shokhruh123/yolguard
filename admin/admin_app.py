@@ -1,0 +1,233 @@
+"""Yo'l Guard — панель сотрудника (desktop EXE). Тот же backend API.
+Вход специалистом -> список (красные сверху) -> досье: triage, фото-ссылки,
+чертёж ИИ, довод, пострадавшие, действия, переписка -> 2 кнопки пользователю."""
+import tkinter as tk
+from tkinter import ttk, messagebox
+import urllib.request
+import urllib.error
+import json
+import io
+import os
+import tempfile
+import webbrowser
+
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except Exception:
+    HAS_PIL = False
+
+API = "http://127.0.0.1:8002/api/v1"
+TOKEN = ""
+CASES = {}
+CURRENT = None
+THUMBS = []          # keep PhotoImage refs alive (tkinter GCs otherwise)
+LAST_SVG = ""        # AI schema SVG for "open in browser"
+
+
+def call(method, path, body=None, raw=False):
+    req = urllib.request.Request(API + path, method=method,
+                                 headers={"Authorization": f"Bearer {TOKEN}",
+                                          "Content-Type": "application/json"})
+    data = json.dumps(body).encode() if body is not None else None
+    try:
+        with urllib.request.urlopen(req, data=data, timeout=20) as r:
+            out = r.read().decode()
+            return out if raw else json.loads(out or "null")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code}: {e.read().decode()[:200]}")
+
+
+def fetch_bytes(path):
+    """GET binary (photo) with the auth header. `path` already starts with /api/v1."""
+    base = API.rsplit("/api/v1", 1)[0]
+    req = urllib.request.Request(base + path, method="GET",
+                                 headers={"Authorization": f"Bearer {TOKEN}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
+
+
+def do_login():
+    global TOKEN
+    try:
+        j = call("POST", "/auth/login", {"phone": e_phone.get(), "password": e_pw.get()})
+        TOKEN = j["access"]
+        lbl_user.config(text="Вход: " + j["user"]["full_name"] + " (" + j["user"]["role"] + ")")
+        refresh_list()
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+
+
+def refresh_list():
+    try:
+        rows = call("GET", "/admin/incidents")
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+        return
+    order = {"red": 0, "yellow": 1, "green": 2}
+    rows.sort(key=lambda x: order.get(x["eligibility"], 3))
+    CASES.clear()
+    lst.delete(0, tk.END)
+    for x in rows:
+        CASES[x["id"]] = x
+        flag = " [ПОСТРАДАВШИЕ]" if x["has_injury"] else ""
+        lst.insert(tk.END, f'#{x["id"]} [{x["eligibility"]}] {x["code"]} {x["status"]}{flag}')
+
+
+def open_case(_ev=None):
+    global CURRENT, LAST_SVG
+    sel = lst.curselection()
+    if not sel:
+        return
+    iid = int(lst.get(sel[0]).split()[0][1:])
+    CURRENT = iid
+    try:
+        d = call("GET", f"/admin/incidents/{iid}")
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+        return
+    LAST_SVG = (d.get("ai") or {}).get("svg", "")
+    txt.config(state="normal")
+    txt.delete("1.0", tk.END)
+    t = d["triage"]
+    txt.insert(tk.END, f'Случай #{d["incident"]["id"]} {d["incident"]["code"]} '
+                       f'[{d["incident"]["eligibility"]}] {d["incident"]["status"]}\n')
+    inj = f'ПОСТРАДАВШИХ: {t.get("injured_count", 0)}' if t.get("injured_count") else "пострадавших нет"
+    txt.insert(tk.END, f'Данные водителя: {inj}'
+                       f'{" | удар: " + t["impact_part"] if t.get("impact_part") else ""}'
+                       f' | пешеход={t["has_pedestrian"]} вина={t["responsibility_accepted"]} '
+                       f'доки={t["docs_valid"]} трезв={t["sober"]} согласие={t["damage_agreed"]}\n')
+    if t.get("driver_comment"):
+        txt.insert(tk.END, f'Комментарий водителя: {t["driver_comment"]}\n')
+    txt.insert(tk.END, "Участники: " + ", ".join(
+        f'{p["side"]}:{p["user"]}{" ✓" if p["confirmed"] else " …"}' for p in d["participants"]) + "\n")
+    if d["ai"]:
+        txt.insert(tk.END, f'\n--- Разбор ИИ ({d["ai"]["source"]}) ---\n{d["ai"]["description"]}\n')
+        txt.insert(tk.END, f'Пострадавшие (из triage, ИИ не выдумывает): {d["ai"]["casualties_note"]}\n')
+        txt.insert(tk.END, "Схема ИИ: черновик, см. кнопку «Открыть схему ИИ».\nЧто делать:\n")
+        for a in d["ai"]["actions"]:
+            txt.insert(tk.END, f"  - {a}\n")
+    txt.insert(tk.END, f'\nВердикт: {(d["review"] or {}).get("verdict", "—")}\n--- Переписка ---\n')
+    for m in d["messages"]:
+        txt.insert(tk.END, f'[{m["from_role"]}] {m["text"]}\n')
+    txt.config(state="disabled")
+    _show_photos(d.get("evidence", []))
+
+
+def _show_photos(evidence):
+    """Фото-превью внутри панели (не ссылки). Требует Pillow."""
+    global THUMBS
+    for w in photos_frame.winfo_children():
+        w.destroy()
+    THUMBS = []
+    if not evidence:
+        ttk.Label(photos_frame, text="Фото нет").pack(side="left")
+        return
+    if not HAS_PIL:
+        ttk.Label(photos_frame, text="(для превью нужен Pillow)").pack(side="left")
+        return
+    for e in evidence:
+        try:
+            raw = fetch_bytes(e["url"])
+            im = Image.open(io.BytesIO(raw)); im.thumbnail((120, 120))
+            ph = ImageTk.PhotoImage(im)
+            THUMBS.append(ph)
+            cell = ttk.Frame(photos_frame)
+            cell.pack(side="left", padx=4)
+            tk.Label(cell, image=ph).pack()
+            ttk.Label(cell, text=e["kind"], font=("", 7)).pack()
+        except Exception:
+            ttk.Label(photos_frame, text=f'{e["kind"]}: ошибка').pack(side="left", padx=4)
+
+
+def open_schema():
+    if not LAST_SVG:
+        messagebox.showinfo("Схема", "Схема ИИ ещё не готова.")
+        return
+    html = ("<!doctype html><meta charset='utf-8'>"
+            "<body style='margin:0;background:#0b1220'>" + LAST_SVG + "</body>")
+    path = os.path.join(tempfile.gettempdir(), f"yolguard_schema_{CURRENT}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+    webbrowser.open("file:///" + path.replace("\\", "/"))
+
+
+def send_msg():
+    if CURRENT is None:
+        return
+    try:
+        call("POST", f"/admin/incidents/{CURRENT}/message", {"text": e_msg.get()})
+        e_msg.delete(0, tk.END)
+        open_case()
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+
+
+def verdict(v):
+    if CURRENT is None:
+        return
+    try:
+        d = call("GET", f"/admin/incidents/{CURRENT}")
+        rid = (d["review"] or {}).get("id")
+        if not rid:
+            messagebox.showinfo("Инфо", "Ревью-кейс не создан (green-случай). Напишите текст вручную.")
+            return
+        j = call("POST", f"/reviews/{rid}", {"verdict": v, "comment": ""})
+        messagebox.showinfo("Отправлено", j.get("sent_to_user", v))
+        open_case()
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+
+
+root = tk.Tk()
+root.title("Yo'l Guard — панель сотрудника")
+root.geometry("760x640")
+
+top = ttk.Frame(root, padding=8)
+top.pack(fill="x")
+ttk.Label(top, text="API:").pack(side="left")
+e_api = ttk.Entry(top, width=32)
+e_api.insert(0, API)
+e_api.pack(side="left", padx=4)
+
+
+def save_api():
+    global API
+    API = e_api.get().strip().rstrip("/")
+    messagebox.showinfo("API", "Адрес: " + API)
+
+
+ttk.Button(top, text="ОК", command=save_api).pack(side="left")
+e_phone = ttk.Entry(top, width=16)
+e_phone.insert(0, "+998900000002")
+e_phone.pack(side="left", padx=4)
+e_pw = ttk.Entry(top, width=10, show="*")
+e_pw.insert(0, "spec1234")
+e_pw.pack(side="left")
+ttk.Button(top, text="Войти", command=do_login).pack(side="left", padx=4)
+lbl_user = ttk.Label(top, text="Не вошли")
+lbl_user.pack(side="left", padx=6)
+
+mid = ttk.Frame(root, padding=8)
+mid.pack(fill="both", expand=True)
+ttk.Button(mid, text="Обновить список", command=refresh_list).pack(anchor="w")
+lst = tk.Listbox(mid, height=8)
+lst.pack(fill="x", pady=4)
+lst.bind("<Double-Button-1>", open_case)
+ttk.Button(mid, text="Открыть досье", command=lambda: open_case()).pack(anchor="w")
+txt = tk.Text(mid, height=16, state="disabled", wrap="word")
+txt.pack(fill="both", expand=True, pady=4)
+ttk.Label(mid, text="Фото водителя:").pack(anchor="w")
+photos_frame = ttk.Frame(mid)
+photos_frame.pack(fill="x", pady=4)
+ttk.Button(mid, text="Открыть схему ИИ", command=open_schema).pack(anchor="w")
+
+bot = ttk.Frame(root, padding=8)
+bot.pack(fill="x")
+e_msg = ttk.Entry(bot, width=50)
+e_msg.pack(side="left", padx=4)
+ttk.Button(bot, text="Отправить текст", command=send_msg).pack(side="left")
+ttk.Button(bot, text="✅ Регистрация завершена", command=lambda: verdict("approved")).pack(side="left", padx=4)
+ttk.Button(bot, text="🚓 Выезжаем для проверки", command=lambda: verdict("needs_field")).pack(side="left")
+
+root.mainloop()

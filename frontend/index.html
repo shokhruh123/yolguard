@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0b1220"/>
+<title>Yo'l Guard — мобильный ассистент при ДТП</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="phone">
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span><span>Yo'l Guard</span></div>
+    <div class="net" id="netDot" title="API">●</div>
+  </header>
+
+  <main id="screens">
+    <!-- HOME / SOS -->
+    <section class="screen active" id="scr-home">
+      <p class="kicker">Экспресс-помощь</p>
+      <h1>Попали в ДТП?<br/>Действуйте спокойно.</h1>
+      <p class="sub">Сфотографируйте — ИИ разберёт, сотрудник подтвердит.</p>
+      <div class="desk">
+      <div>
+      <button class="sos" id="btnSos">Я попал в ДТП</button>
+      <div class="row2">
+        <div class="stat"><b id="stCode">—</b><span>код сессии</span></div>
+        <div class="stat"><b id="stStatus">—</b><span>статус</span></div>
+        <div class="stat"><b id="stComp">—</b><span>фото</span></div>
+      </div>
+      </div>
+      <div class="card">
+        <h3>Как это работает</h3>
+        <ol class="steps">
+          <li>Отвечаете на 6 вопросов — 30 секунд</li>
+          <li>Фотографируете — ИИ анализирует сам</li>
+          <li>Получаете схему и ответ</li>
+          <li>Сотрудник пишет вам решение</li>
+        </ol>
+      </div>
+      </div>
+    </section>
+
+    <!-- WIZARD -->
+    <section class="screen" id="scr-case">
+      <p class="kicker">Шаг <span id="wStep">1</span> из 4</p>
+      <h2 id="wTitle">Проверка eligibility</h2>
+      <div class="wpage active" id="w1">
+        <label class="check"><input type="checkbox" id="cInj"/><span>Есть пострадавшие</span></label>
+        <label class="check"><input type="checkbox" id="cPed"/><span>Участвует пешеход</span></label>
+        <label class="check"><input type="checkbox" id="cResp" checked/><span>Один водитель признал вину</span></label>
+        <label class="check"><input type="checkbox" id="cDocs" checked/><span>Страховка и документы у обоих в порядке</span></label>
+        <label class="check"><input type="checkbox" id="cSober" checked/><span>Оба трезвы</span></label>
+        <label class="check"><input type="checkbox" id="cAgreed" checked/><span>Согласны по списку повреждений</span></label>
+        <label class="fine" for="cInjCount">Сколько пострадавших (0 — нет)</label>
+        <input type="number" id="cInjCount" min="0" max="50" value="0" inputmode="numeric"/>
+        <label class="fine" for="cImpact">По какой части пришёлся удар</label>
+        <select id="cImpact">
+          <option value="">— не указано —</option>
+          <option>Передний бампер</option>
+          <option>Задний бампер</option>
+          <option>Левый бок</option>
+          <option>Правый бок</option>
+          <option>Капот / перёд</option>
+          <option>Багажник / зад</option>
+          <option>Крыша</option>
+          <option>Несколько зон</option>
+        </select>
+        <label class="fine" for="cComment">Комментарий (необязательно)</label>
+        <input type="text" id="cComment" maxlength="1000" placeholder="Напр.: выехал с второстепенной…"/>
+        <button class="primary" id="btnTriage">Проверить</button>
+        <div class="verdict" id="triageOut">Пока не проверено</div>
+      </div>
+      <div class="wpage" id="w2">
+        <div class="progress"><i id="evBar"></i></div>
+        <p class="hint" id="evHint">Добавьте 6 фото по списку</p>
+        <div class="chips" id="evChips"></div>
+        <label class="camera" for="camInput">Сфотографировать</label>
+        <input type="file" id="camInput" accept="image/*" capture="environment" hidden/>
+        <div class="thumbs" id="thumbs"></div>
+        <div class="frow">
+          <select id="evKind">
+            <option value="scene_overview">Общий план места</option>
+            <option value="both_vehicles">Оба авто в кадре</option>
+            <option value="plate_a">Номер авто A</option>
+            <option value="plate_b">Номер авто B</option>
+            <option value="road_marking">Разметка и знаки</option>
+            <option value="damage_close">Повреждение крупно</option>
+          </select>
+          <button class="ghost" id="btnEv">Добавить</button>
+        </div>
+      </div>
+      <div class="wpage" id="w3">
+        <div id="aiBox" class="svgbox">ИИ анализирует фото...</div>
+        <div class="verdict" id="aiText" style="display:none"></div>
+        <div id="svgBox" class="svgbox">Ваш черновик схемы</div>
+        <button class="ghost" id="btnDiagram">Собрать черновик схемы</button>
+        <p class="fine">Черновик. Факт подтверждаете вы и специалист.</p>
+        <button class="ghost" id="btnConfirm">Я подтверждаю схему</button>
+      </div>
+      <div class="wpage" id="w4">
+        <h3>Ответ сотрудника</h3>
+        <div id="msgList"><p class="hint">Пока тихо. Ответ появится здесь.</p></div>
+        <div class="qreplies">
+          <button class="ghost" id="btnAck">Понял, жду</button>
+          <button class="ghost" id="btnHelp">Нужна помощь</button>
+        </div>
+        <h3 style="margin-top:14px">Пакет для страховой</h3>
+        <p class="hint">Пакет собирает сотрудник (роль specialist).</p>
+        <button class="ghost" id="btnSpecLogin">Войти специалистом</button>
+        <button class="primary" id="btnClaim">Пакет для страховой</button>
+        <pre id="claimOut">—</pre>
+      </div>
+      <div class="wpager">
+        <button class="ghost" id="wPrev">Назад</button>
+        <button class="ghost" id="wNext">Далее</button>
+      </div>
+    </section>
+
+    <!-- GARAGE -->
+    <section class="screen" id="scr-garage">
+      <p class="kicker">Мой автомобиль</p>
+      <h2>Гараж</h2>
+      <div class="card">
+        <input id="gPlate" placeholder="Госномер · 01A777AA"/>
+        <div class="frow">
+          <input id="gMake" placeholder="Марка"/>
+          <input id="gModel" placeholder="Модель"/>
+        </div>
+        <button class="primary" id="btnVehicle">Сохранить авто</button>
+        <pre id="vehOut">—</pre>
+      </div>
+      <div class="card">
+        <h3>Сервер API</h3>
+        <input id="gApi" placeholder="http://127.0.0.1:8002/api/v1"/>
+        <button class="ghost" id="btnApi">Сохранить адрес</button>
+      </div>
+      <div class="card">
+        <h3>Вход</h3>
+        <input id="gPhone" value="+998900000011"/>
+        <input id="gPw" type="password" value="driver123"/>
+        <button class="ghost" id="btnLogin">Войти</button>
+      </div>
+    </section>
+    <!-- ADMIN -->
+    <section class="screen" id="scr-admin">
+      <p class="kicker">Сотрудник</p>
+      <h2>Панель контроля</h2>
+      <p class="hint">Красные случаи (пострадавшие / ГАИ) — вверху. Нажмите на случай для досье.</p>
+      <button class="ghost" id="btnAdminReload">Обновить список</button>
+      <div id="adminList"></div>
+      <div id="adminDetail" class="card" style="display:none"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-s="scr-home">SOS</button>
+    <button class="tab" data-s="scr-case">Случай</button>
+    <button class="tab" data-s="scr-garage">Гараж</button>
+    <button class="tab" data-s="scr-admin">Панель</button>
+  </nav>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
