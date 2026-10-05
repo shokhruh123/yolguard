@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from ..db import get_db
 from .. import models, schemas
@@ -23,8 +23,10 @@ def confirm(iid: int, db: Session = Depends(get_db), u: models.User = Depends(cu
     return {"confirmed": True}
 
 @router.get("/reviews/queue")
-def queue(db: Session = Depends(get_db), _s: models.User = Depends(need_role("specialist"))):
-    rows = db.query(models.ReviewCase).filter_by(verdict="pending").all()
+def queue(db: Session = Depends(get_db),
+          limit: int = Query(200, ge=1, le=500),
+          _s: models.User = Depends(need_role("specialist"))):
+    rows = db.query(models.ReviewCase).filter_by(verdict="pending").limit(limit).all()
     return [{"id": r.id, "incident_id": r.incident_id} for r in rows]
 
 @router.post("/reviews/{rid}")
@@ -32,9 +34,16 @@ def verdict(rid: int, body: schemas.ReviewIn, db: Session = Depends(get_db),
             s: models.User = Depends(need_role("specialist"))):
     r = db.get(models.ReviewCase, rid)
     if not r: raise HTTPException(404, "Not found")
+    if r.verdict != "pending":
+        raise HTTPException(409, f"Already decided: {r.verdict}")
     if body.verdict not in ("approved", "needs_field", "rejected"):
         raise HTTPException(400, "Bad verdict")
+    if body.verdict == "rejected" and not (body.comment or "").strip():
+        raise HTTPException(400, "Rejection needs a comment")
     r.verdict, r.comment, r.assignee_id = body.verdict, body.comment, s.id
+    if body.verdict == "rejected":
+        inc = db.get(models.Incident, r.incident_id)
+        if inc: inc.status = "closed"
     # Две кнопки сотрудника сразу уходят пользователю текстом
     texts = {
         "approved": "Зарегистрировано успешно. К вам едут агенты, ждите.",

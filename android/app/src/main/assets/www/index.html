@@ -22,7 +22,7 @@
       </svg>
       <span>Yo'l Guard</span>
     </div>
-    <div class="net" id="netDot" title="Связь с сервером">●</div>
+    <div class="net" id="netDot" role="status" aria-live="polite" aria-label="Нет связи с сервером" title="Связь с сервером">●</div>
   </header>
 
   <main id="screens">
@@ -49,6 +49,15 @@
           <li>Сотрудник пишет вам решение</li>
         </ol>
       </div>
+      </div>
+      <div class="card">
+        <h3>Второй участник? Подключитесь по коду</h3>
+        <p class="hint">Первый водитель видит код сессии на главном экране после нажатия «Я попал в ДТП».</p>
+        <div class="frow">
+          <input id="joinId" placeholder="ID случая" inputmode="numeric"/>
+          <input id="joinCode" placeholder="Код сессии" autocapitalize="characters"/>
+        </div>
+        <button class="ghost" id="btnJoin">Подключиться как сторона B</button>
       </div>
     </section>
 
@@ -83,7 +92,7 @@
         <div class="verdict" id="triageOut">Пока не проверено</div>
       </div>
       <div class="wpage" id="w2">
-        <div class="progress"><i id="evBar"></i></div>
+        <div class="progress" role="progressbar" aria-label="Прогресс фотофиксации" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"><i id="evBar"></i></div>
         <p class="hint" id="evHint">Добавьте 6 фото по списку</p>
         <div class="chips" id="evChips"></div>
         <label class="camera" for="camInput">Сфотографировать</label>
@@ -98,11 +107,12 @@
             <option value="road_marking">Разметка и знаки</option>
             <option value="damage_close">Повреждение крупно</option>
           </select>
-          <button class="ghost" id="btnEv">Добавить</button>
+          <button class="ghost" id="btnEv" title="Только для демо без камеры: настоящие фото — через «Сфотографировать»">Демо-метка (без фото)</button>
         </div>
       </div>
       <div class="wpage" id="w3">
-        <div id="aiBox" class="svgbox">ИИ анализирует фото...</div>
+        <div id="aiBox" class="svgbox" role="status" aria-live="polite">ИИ анализирует фото...</div>
+        <button class="ghost small" id="aiRetry" style="display:none">Повторить анализ</button>
         <div class="verdict" id="aiText" style="display:none"></div>
         <div id="svgBox" class="svgbox">Ваш черновик схемы</div>
         <button class="ghost" id="btnDiagram">Собрать черновик схемы</button>
@@ -148,8 +158,8 @@
       </div>
       <div class="card">
         <h3>Вход</h3>
-        <input id="gPhone" value="+998900000011"/>
-        <input id="gPw" type="password" value="driver123"/>
+        <input id="gPhone" placeholder="+99890…" autocomplete="tel"/>
+        <input id="gPw" type="password" placeholder="Пароль" autocomplete="current-password"/>
         <button class="ghost" id="btnLogin">Войти</button>
       </div>
     </section>
@@ -157,21 +167,47 @@
     <section class="screen" id="scr-admin">
       <p class="kicker">Сотрудник</p>
       <h2>Панель контроля</h2>
+      <div class="row2 stats" id="adminStats" aria-live="polite"></div>
       <p class="hint">Красные случаи (пострадавшие / ГАИ) — вверху. Нажмите на случай для досье.</p>
+      <div class="frow filters">
+        <select id="fltStatus" aria-label="Фильтр по статусу">
+          <option value="">Все статусы</option>
+          <option value="triage">triage</option>
+          <option value="evidence">evidence</option>
+          <option value="diagram">diagram</option>
+          <option value="review">review</option>
+          <option value="ready">ready</option>
+          <option value="escalated">escalated</option>
+          <option value="closed">closed</option>
+        </select>
+        <select id="fltElig" aria-label="Фильтр по eligibility">
+          <option value="">Все цвета</option>
+          <option value="red">red</option>
+          <option value="yellow">yellow</option>
+          <option value="green">green</option>
+        </select>
+        <input id="fltSearch" placeholder="Поиск: код/ID" aria-label="Поиск по коду или ID"/>
+      </div>
       <button class="ghost" id="btnAdminReload">Обновить список</button>
+      <p class="fine" id="adminCount" aria-live="polite"></p>
       <div id="adminList"></div>
+      <div class="frow pager">
+        <button class="ghost" id="adminPrev">← Назад</button>
+        <button class="ghost" id="adminNext">Далее →</button>
+      </div>
       <div id="adminDetail" class="card" style="display:none"></div>
     </section>
   </main>
 
-  <nav class="tabbar">
-    <button class="tab active" data-s="scr-home">SOS</button>
-    <button class="tab" data-s="scr-case">Случай</button>
-    <button class="tab" data-s="scr-garage">Гараж</button>
-    <button class="tab" data-s="scr-admin">Панель</button>
+  <nav class="tabbar" role="tablist" aria-label="Разделы">
+    <button class="tab active" role="tab" aria-selected="true" data-s="scr-home">SOS</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="scr-case">Случай</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="scr-garage">Гараж</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="scr-admin">Панель</button>
   </nav>
 </div>
-<script src="app.js"></script>
-<script src="ui.js"></script>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js" defer></script>
+<script src="ui.js" defer></script>
 </body>
 </html>

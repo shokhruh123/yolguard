@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths: full-size camera photos for the WebView file chooser.
+     App-private dir only — no shared-storage permission needed. -->
+<paths>
+    <external-files-path name="camera" path="Pictures/" />
+    <cache-path name="camera" path="/" />
+</paths>

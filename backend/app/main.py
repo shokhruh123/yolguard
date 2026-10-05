@@ -1,4 +1,5 @@
 """Modular monolith. Versioned API /api/v1. Frontend served as static demo."""
+import logging
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,10 +8,16 @@ from .config import settings
 from .db import Base, engine, ensure_schema
 from .routers import auth, incidents, misc, admin
 
-os.makedirs("uploads", exist_ok=True)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("yolguard")
+
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 Base.metadata.create_all(bind=engine)
 ensure_schema()
-app = FastAPI(title="Yo'l Guard API", version="0.3.0")
+app = FastAPI(title="Yo'l Guard API", version="0.4.0")
+log.info("upload_dir=%s mongo=%s", settings.UPLOAD_DIR,
+         "enabled" if (settings.MONGODB_URI or "").strip() else "disabled")
 
 # Explicit CORS allow-list from .env — never "*". allow_credentials needs exact origins.
 app.add_middleware(

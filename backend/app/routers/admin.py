@@ -1,10 +1,12 @@
 """Админ-панель сотрудника: список инцидентов + полное досье.
 Видит: triage, фото, чертёж ИИ, довод ИИ, пострадавших, рекомендации, схему, подтверждения."""
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..db import get_db
 from .. import models, schemas
+from .. import mongo
 from .deps import need_role
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -16,9 +18,41 @@ def _brief(inc: models.Incident) -> dict:
 
 @router.get("/incidents")
 def list_incidents(db: Session = Depends(get_db),
+                   skip: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=500),
+                   status: str = Query("", max_length=20),
+                   eligibility: str = Query("", max_length=10),
                    _s: models.User = Depends(need_role("specialist"))):
-    rows = db.query(models.Incident).order_by(models.Incident.id.desc()).all()
-    return [_brief(r) for r in rows]
+    q = db.query(models.Incident).order_by(models.Incident.id.desc())
+    if status:
+        q = q.filter_by(status=status)
+    if eligibility:
+        q = q.filter_by(eligibility=eligibility)
+    total = q.count()
+    return {"total": total, "items": [_brief(r) for r in q.offset(skip).limit(limit).all()]}
+
+@router.get("/stats")
+def stats(db: Session = Depends(get_db),
+          _s: models.User = Depends(need_role("specialist"))):
+    """Сводка для dashboard: ДТП, статусы, eligibility, очередь, пользователи, ИИ."""
+    by_status = dict(db.query(models.Incident.status, func.count())
+                     .group_by(models.Incident.status).all())
+    by_elig = dict(db.query(models.Incident.eligibility, func.count())
+                   .group_by(models.Incident.eligibility).all())
+    by_ai = dict(db.query(models.AIAnalysis.source, func.count())
+                 .group_by(models.AIAnalysis.source).all())
+    pending = db.query(models.ReviewCase).filter_by(verdict="pending").count()
+    recent = db.query(models.Incident).order_by(models.Incident.id.desc()).limit(10).all()
+    return {
+        "incidents_total": sum(by_status.values()),
+        "by_status": by_status,
+        "by_eligibility": by_elig,
+        "reviews_pending": pending,
+        "users_total": db.query(models.User).count(),
+        "evidence_total": db.query(models.Evidence).count(),
+        "ai_by_source": by_ai,
+        "mongo_enabled": mongo.mongo_enabled(),
+        "recent": [_brief(r) for r in recent],
+    }
 
 @router.get("/incidents/{iid}")
 def incident_detail(iid: int, db: Session = Depends(get_db),
@@ -66,6 +100,8 @@ def send_message(iid: int, body: schemas.MessageIn, db: Session = Depends(get_db
                  s: models.User = Depends(need_role("specialist"))):
     """Сотрудник пишет пользователю произвольный текст."""
     if not db.get(models.Incident, iid): raise HTTPException(404, "Not found")
-    m = models.Message(incident_id=iid, sender_id=s.id, sender_role=s.role, text=body.text.strip()[:1000])
+    text = body.text.strip()
+    if not text: raise HTTPException(400, "Пустое сообщение")
+    m = models.Message(incident_id=iid, sender_id=s.id, sender_role=s.role, text=text[:1000])
     db.add(m); db.commit()
     return {"id": m.id}

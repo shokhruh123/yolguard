@@ -3,6 +3,7 @@
 Схема — черновик для человека, не юридический факт."""
 import asyncio
 import base64
+import html
 import json
 import httpx
 from ..config import settings
@@ -19,15 +20,16 @@ def _model_url(model: str) -> str:
 
 
 def heuristic_svg(label_a: str = "A", label_b: str = "B") -> str:
+    la, lb = html.escape(label_a)[:12], html.escape(label_b)[:12]
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220">'
         '<rect width="400" height="220" fill="#0e1626"/>'
         '<rect y="70" width="400" height="80" fill="#1a2540"/>'
         '<line x1="0" y1="110" x2="400" y2="110" stroke="#f5a524" stroke-width="2" stroke-dasharray="12 8"/>'
         '<rect x="10" y="20" width="26" height="26" fill="#24314d"/><text x="23" y="38" fill="#9aa7bd" font-size="16" text-anchor="middle">P</text>'
-        f'<rect x="80" y="76" width="86" height="30" rx="6" fill="#2b60a0"/><text x="123" y="96" fill="#fff" font-size="14" text-anchor="middle">{label_a}</text>'
+        f'<rect x="80" y="76" width="86" height="30" rx="6" fill="#2b60a0"/><text x="123" y="96" fill="#fff" font-size="14" text-anchor="middle">{la}</text>'
         '<line x1="166" y1="91" x2="206" y2="91" stroke="#22c07a" stroke-width="3" marker-end="url(#ah)"/>'
-        f'<rect x="228" y="104" width="86" height="30" rx="6" fill="#c0392b"/><text x="271" y="124" fill="#fff" font-size="14" text-anchor="middle">{label_b}</text>'
+        f'<rect x="228" y="104" width="86" height="30" rx="6" fill="#c0392b"/><text x="271" y="124" fill="#fff" font-size="14" text-anchor="middle">{lb}</text>'
         '<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
         '<path d="M0,0 L8,4 L0,8" fill="none" stroke="#22c07a" stroke-width="2"/></marker></defs>'
         '<circle cx="212" cy="100" r="9" fill="none" stroke="#f5a524" stroke-width="3"/>'
@@ -35,6 +37,18 @@ def heuristic_svg(label_a: str = "A", label_b: str = "B") -> str:
         '<text x="212" y="160" fill="#9aa7bd" font-size="12" text-anchor="middle">предполагаемая точка контакта</text>'
         "</svg>"
     )
+
+
+def _sanitize_svg(svg: str) -> str:
+    """Strip active content from LLM-produced SVG (script tags, event handlers,
+    javascript: URLs). Keeps shapes/text. Falls back to heuristic on garbage."""
+    import re
+    if not svg or "<svg" not in svg.lower():
+        return heuristic_svg()
+    clean = re.sub(r"(?is)<script.*?</script\s*>", "", svg)
+    clean = re.sub(r"(?i)\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", clean)
+    clean = re.sub(r"(?i)(href|xlink:href)\s*=\s*([\"']?)\s*javascript:[^\"'>]*\2", r"\1=\2#\2", clean)
+    return clean[:50000]
 
 
 def heuristic_reason(triage: dict, kinds: list[str]) -> dict:
@@ -97,21 +111,30 @@ async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
                         last_err = f"{model}: 404"
                         break
                     r.raise_for_status()
-                    text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    try:
+                        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    except (KeyError, IndexError, TypeError, ValueError):
+                        # safety-block / unexpected shape — treat as model failure
+                        last_err = f"{model}: bad_response"
+                        break
                     start, end = text.find("{"), text.rfind("}")
                     data = json.loads(text[start:end + 1]) if start >= 0 else {}
                     desc = str(data.get("description", base["description"]))
                     impact = str(data.get("impact_summary", "")).strip()
                     if impact:
                         desc = f"{desc}\n\n🅰️🅱️ Удар: {impact}"
+                    # SVG от LLM — чужой контент: убираем script/on* перед сохранением
+                    svg_raw = str(data.get("svg") or heuristic_svg())
                     return {
                         "source": f"gemini:{model}",
                         "description": desc,
                         "casualties_note": base["casualties_note"],
                         "actions": list(data.get("actions", base["actions"])),
-                        "svg": str(data.get("svg") or heuristic_svg()),
+                        "svg": _sanitize_svg(svg_raw),
                     }
                 except Exception as e:
+                    # transient error -> retry once, then fall through to next model
                     last_err = f"{model}: {type(e).__name__}"
-                    break
+                    await asyncio.sleep(1.5)
+                    continue
     return {"source": f"heuristic (Gemini недоступен: {last_err})", **base, "svg": heuristic_svg()}

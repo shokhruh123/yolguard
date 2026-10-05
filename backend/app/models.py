@@ -74,6 +74,9 @@ class Evidence(Base):
     gps_lat = Column(Numeric(9, 6))  # from photo EXIF, if present
     gps_lon = Column(Numeric(9, 6))
     mime = Column(String(20))  # validated content type: image/jpeg|png|webp
+    size_bytes = Column(Integer)  # processed file size on disk
+    status = Column(String(16), nullable=False, default="stored")  # stored|processing|ready|failed
+    storage = Column(String(16), nullable=False, default="local")  # local|s3|...
 
 class Diagram(Base):
     __tablename__ = "diagrams"

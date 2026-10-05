@@ -27,6 +27,9 @@ def ensure_schema() -> None:
             ("gps_lat", "NUMERIC"),
             ("gps_lon", "NUMERIC"),
             ("mime", "VARCHAR(20)"),
+            ("size_bytes", "INTEGER"),
+            ("status", "VARCHAR(16) DEFAULT 'stored'"),
+            ("storage", "VARCHAR(16) DEFAULT 'local'"),
         ],
         "incidents": [
             ("impact_part", "VARCHAR(120)"),

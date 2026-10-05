@@ -1,22 +1,37 @@
 """Incident flow: create -> triage -> evidence -> diagram -> claim package."""
-import hashlib, json, os, secrets, time
+import hashlib, html, json, os, re, secrets, time
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Header
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from ..config import settings
 from ..db import get_db
 from .. import models, schemas
-from ..services.rules import Triage, evaluate, completeness
+from .. import mongo
+from ..services.rules import Triage, evaluate, completeness, REQUIRED_EVIDENCE
 from ..services import ai as ai_svc
 from ..services import images as img_svc
 from .deps import current_user, need_role, user_from_token
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
+# kind значений фото: только известные + other. Защита от path traversal
+# (kind раньше вставлялся в имя файла без sanitize) и от мусорных видов.
+ALLOWED_KINDS = set(REQUIRED_EVIDENCE) | {"doc_photo", "other"}
+
+def _check_kind(kind: str) -> str:
+    k = (kind or "").strip()
+    if k not in ALLOWED_KINDS or not re.fullmatch(r"[a-z_]+", k):
+        raise HTTPException(400, f"Bad kind. Allowed: {sorted(ALLOWED_KINDS)}")
+    return k
+
 async def _run_ai(db: Session, inc: models.Incident) -> dict:
     """Запускает ИИ по фото+triage, сохраняет результат, возвращает его."""
     ev = db.query(models.Evidence).filter_by(incident_id=inc.id).all()
+    # читаем не более 3 файлов (столько реально уходит в модель) — защита RAM
     images: list[bytes] = []
     for e in ev:
+        if len(images) >= 3:
+            break
         p = e.file_path[1:] if e.file_path.startswith("/") else e.file_path
         if os.path.exists(p):
             with open(p, "rb") as f: images.append(f.read())
@@ -36,6 +51,15 @@ async def _run_ai(db: Session, inc: models.Incident) -> dict:
                                 actions_json=json.dumps(res["actions"], ensure_ascii=False), svg=res["svg"])
         db.add(row)
     db.commit()
+    # Document store: полная история запусков ИИ + аудит-событие (SQL хранит итог).
+    try:
+        mongo.store_ai_analysis(inc.id, {"source": res["source"], "description": res["description"],
+                                         "casualties_note": res["casualties_note"],
+                                         "actions": res["actions"], "svg": res["svg"]},
+                                {"kinds": [e.kind for e in ev], "images_sent": len(images)})
+        mongo.log_event(inc.id, "ai_analysis", f"source={res['source']}")
+    except Exception:
+        pass
     return {"source": res["source"], "description": res["description"],
             "casualties_note": res["casualties_note"], "actions": res["actions"], "svg": res["svg"]}
 
@@ -87,8 +111,9 @@ def add_evidence(iid: int, body: schemas.EvidenceIn, db: Session = Depends(get_d
                  u: models.User = Depends(current_user)):
     inc = db.get(models.Incident, iid)
     if not inc or inc.status == "escalated": raise HTTPException(400, "Incident not in evidence stage")
-    h = hashlib.sha256(f"{iid}:{body.kind}:{body.file_path}".encode()).hexdigest()
-    db.add(models.Evidence(incident_id=iid, kind=body.kind, file_path=body.file_path, sha256=h))
+    kind = _check_kind(body.kind)
+    h = hashlib.sha256(f"{iid}:{kind}:{body.file_path}".encode()).hexdigest()
+    db.add(models.Evidence(incident_id=iid, kind=kind, file_path=body.file_path, sha256=h))
     db.commit()
     kinds = [e.kind for e in db.query(models.Evidence).filter_by(incident_id=iid).all()]
     comp = completeness(kinds)
@@ -101,10 +126,12 @@ def make_diagram(iid: int, body: schemas.DiagramIn, db: Session = Depends(get_db
                  u: models.User = Depends(current_user)):
     inc = db.get(models.Incident, iid)
     if not inc: raise HTTPException(404, "Not found")
+    # метки — пользовательский ввод: экранируем перед вставкой в SVG (stored XSS)
+    la, lb = html.escape(body.label_a), html.escape(body.label_b)
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">'
            f'<rect width="400" height="200" fill="#eef"/><line x1="0" y1="100" x2="400" y2="100" stroke="#333" stroke-dasharray="8 6"/>'
-           f'<rect x="90" y="60" width="80" height="36" fill="#2b60a0"/><text x="130" y="83" fill="#fff" text-anchor="middle">{body.label_a}</text>'
-           f'<rect x="230" y="104" width="80" height="36" fill="#c0392b"/><text x="270" y="127" fill="#fff" text-anchor="middle">{body.label_b}</text>'
+           f'<rect x="90" y="60" width="80" height="36" fill="#2b60a0"/><text x="130" y="83" fill="#fff" text-anchor="middle">{la}</text>'
+           f'<rect x="230" y="104" width="80" height="36" fill="#c0392b"/><text x="270" y="127" fill="#fff" text-anchor="middle">{lb}</text>'
            f'<circle cx="180" cy="100" r="5" fill="#f39c12"/></svg>')
     d = db.query(models.Diagram).filter_by(incident_id=iid).first()
     if d: d.svg = svg
@@ -119,7 +146,8 @@ def claim_package(iid: int, db: Session = Depends(get_db),
     if not inc: raise HTTPException(404, "Not found")
     ev = db.query(models.Evidence).filter_by(incident_id=iid).all()
     parts = db.query(models.Participant).filter_by(incident_id=iid).all()
-    if not all(p.confirmed for p in parts):
+    # Европротокол требует ровно двух подтвердивших участников
+    if len(parts) != 2 or not all(p.confirmed for p in parts):
         raise HTTPException(400, "Оба участника должны подтвердить схему/данные")
     payload = {"incident_id": iid, "eligibility": [inc.eligibility, inc.eligibility_reason],
                "evidence": [{"kind": e.kind, "sha256": e.sha256} for e in ev]}
@@ -142,6 +170,9 @@ async def evidence_upload(iid: int, kind: str = Form(...), file: UploadFile = Fi
     if u.role not in ("specialist", "admin") and \
             not db.query(models.Participant).filter_by(incident_id=iid, user_id=u.id).first():
         raise HTTPException(403, "Not your incident")
+    kind = _check_kind(kind)
+    if db.query(models.Evidence).filter_by(incident_id=iid).count() >= settings.MAX_UPLOADS_PER_INCIDENT:
+        raise HTTPException(409, "Too many uploads for this incident")
     raw = await file.read()
     try:
         proc = img_svc.process_upload(raw)
@@ -150,18 +181,30 @@ async def evidence_upload(iid: int, kind: str = Form(...), file: UploadFile = Fi
     data = proc["bytes"]
     h = hashlib.sha256(data).hexdigest()
     name = f"{iid}_{kind}_{int(time.time())}_{secrets.token_hex(2)}{proc['ext']}"
-    with open(os.path.join("uploads", name), "wb") as f:
+    updir = settings.UPLOAD_DIR
+    os.makedirs(updir, exist_ok=True)
+    with open(os.path.join(updir, name), "wb") as f:
         f.write(data)
-    db.add(models.Evidence(incident_id=iid, kind=kind, file_path=f"uploads/{name}",
-                           sha256=h, mime=proc["mime"],
-                           gps_lat=proc["gps_lat"], gps_lon=proc["gps_lon"]))
-    db.commit()
+    ev_row = models.Evidence(incident_id=iid, kind=kind, file_path=f"{updir}/{name}",
+                             sha256=h, mime=proc["mime"], size_bytes=len(data),
+                             status="processing", storage="local",
+                             gps_lat=proc["gps_lat"], gps_lon=proc["gps_lon"])
+    db.add(ev_row)
+    db.commit(); db.refresh(ev_row)
+    try:
+        mongo.store_evidence_meta(ev_row.id, iid, {"kind": kind, "mime": proc["mime"],
+            "size_bytes": len(data), "sha256": h,
+            "gps": [proc["gps_lat"], proc["gps_lon"]]})
+        mongo.log_event(iid, "upload", f"kind={kind} size={len(data)}", actor_id=u.id)
+    except Exception:
+        pass
     kinds = [e.kind for e in db.query(models.Evidence).filter_by(incident_id=iid).all()]
     comp = completeness(kinds)
     if comp["percent"] == 100 and inc.status == "evidence":
         inc.status = "diagram"; db.commit()
     # ИИ — главный: сразу анализирует фото и готовит ответ
     ai_res = await _run_ai(db, inc)
+    ev_row.status = "ready"; db.commit()
     ev = db.query(models.Evidence).filter_by(incident_id=iid).order_by(models.Evidence.id.desc()).first()
     return {"saved": True, "sha256": h, "evidence_id": ev.id,
             "url": f"/api/v1/incidents/{iid}/evidence/{ev.id}/file",
@@ -184,8 +227,8 @@ def get_evidence_file(iid: int, eid: int,
     ev = db.query(models.Evidence).filter_by(id=eid, incident_id=iid).first()
     if not ev:
         raise HTTPException(404, "Evidence not found")
-    # constrain to uploads/ dir — never trust the stored path for traversal
-    path = os.path.join("uploads", os.path.basename(ev.file_path))
+    # constrain to upload dir — never trust the stored path for traversal
+    path = os.path.join(settings.UPLOAD_DIR, os.path.basename(ev.file_path))
     if not os.path.exists(path):
         raise HTTPException(404, "File missing")
     return FileResponse(path, media_type=ev.mime or "application/octet-stream")
@@ -197,6 +240,17 @@ async def ai_analysis(iid: int, db: Session = Depends(get_db),
     inc = db.get(models.Incident, iid)
     if not inc: raise HTTPException(404, "Not found")
     return await _run_ai(db, inc)
+
+@router.get("/{iid}/ai-history")
+def ai_history(iid: int, limit: int = Query(20, ge=1, le=100),
+               db: Session = Depends(get_db),
+               u: models.User = Depends(current_user)):
+    """История запусков ИИ + события обработки (MongoDB). SQL всегда хранит
+    последний итог; здесь — полная хронология. Без Mongo: enabled=false."""
+    _can_read(iid, u, db)
+    return {"enabled": mongo.mongo_enabled(),
+            "items": mongo.get_ai_history(iid, limit),
+            "events": mongo.get_events(iid, limit)}
 
 def _can_read(iid: int, u: models.User, db: Session) -> models.Incident:
     inc = db.get(models.Incident, iid)

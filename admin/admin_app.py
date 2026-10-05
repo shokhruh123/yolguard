@@ -8,6 +8,7 @@ import urllib.error
 import json
 import io
 import os
+import re
 import tempfile
 import webbrowser
 
@@ -20,9 +21,21 @@ except Exception:
 API = "http://127.0.0.1:8002/api/v1"
 TOKEN = ""
 CASES = {}
+IDS = []  # incident ids parallel to Listbox rows (no fragile string parsing)
 CURRENT = None
 THUMBS = []          # keep PhotoImage refs alive (tkinter GCs otherwise)
 LAST_SVG = ""        # AI schema SVG for "open in browser"
+LAST_SCHEMA_PATH = ""
+
+
+def _sanitize_svg(svg):
+    """Strip active content from server/AI SVG before opening in a browser."""
+    if not svg or "<svg" not in svg.lower():
+        return ""
+    clean = re.sub(r"(?is)<script.*?</script\s*>", "", svg)
+    clean = re.sub(r"(?i)\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", clean)
+    clean = re.sub(r"(?i)(href|xlink:href)\s*=\s*([\"']?)\s*javascript:[^\"'>]*\2", r"\1=\2#\2", clean)
+    return clean[:50000]
 
 
 def call(method, path, body=None, raw=False):
@@ -60,26 +73,39 @@ def do_login():
 
 def refresh_list():
     try:
-        rows = call("GET", "/admin/incidents")
+        data = call("GET", "/admin/incidents?limit=200")
+        rows = data.get("items", []) if isinstance(data, dict) else data
+        total = data.get("total", len(rows)) if isinstance(data, dict) else len(rows)
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
         return
+    try:
+        st = call("GET", "/admin/stats")
+        lbl_stats.config(text=(f'ДТП: {st.get("incidents_total", "?")} | '
+                               f'на проверке: {st.get("reviews_pending", "?")} | '
+                               f'пользователи: {st.get("users_total", "?")} | '
+                               f'фото: {st.get("evidence_total", "?")}'))
+    except Exception:
+        pass
     order = {"red": 0, "yellow": 1, "green": 2}
     rows.sort(key=lambda x: order.get(x["eligibility"], 3))
     CASES.clear()
+    IDS.clear()
     lst.delete(0, tk.END)
     for x in rows:
         CASES[x["id"]] = x
+        IDS.append(x["id"])
         flag = " [ПОСТРАДАВШИЕ]" if x["has_injury"] else ""
         lst.insert(tk.END, f'#{x["id"]} [{x["eligibility"]}] {x["code"]} {x["status"]}{flag}')
+    lbl_count.config(text=f"Всего: {total}, показано: {len(rows)}")
 
 
 def open_case(_ev=None):
     global CURRENT, LAST_SVG
     sel = lst.curselection()
-    if not sel:
+    if not sel or sel[0] >= len(IDS):
         return
-    iid = int(lst.get(sel[0]).split()[0][1:])
+    iid = IDS[sel[0]]
     CURRENT = iid
     try:
         d = call("GET", f"/admin/incidents/{iid}")
@@ -141,22 +167,32 @@ def _show_photos(evidence):
 
 
 def open_schema():
-    if not LAST_SVG:
+    global LAST_SCHEMA_PATH
+    svg = _sanitize_svg(LAST_SVG)
+    if not svg:
         messagebox.showinfo("Схема", "Схема ИИ ещё не готова.")
         return
+    if LAST_SCHEMA_PATH and os.path.exists(LAST_SCHEMA_PATH):
+        try: os.unlink(LAST_SCHEMA_PATH)
+        except OSError: pass
     html = ("<!doctype html><meta charset='utf-8'>"
-            "<body style='margin:0;background:#0b1220'>" + LAST_SVG + "</body>")
-    path = os.path.join(tempfile.gettempdir(), f"yolguard_schema_{CURRENT}.html")
-    with open(path, "w", encoding="utf-8") as f:
+            "<body style='margin:0;background:#0b1220'>" + svg + "</body>")
+    fd, path = tempfile.mkstemp(prefix="yolguard_schema_", suffix=".html")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(html)
+    LAST_SCHEMA_PATH = path
     webbrowser.open("file:///" + path.replace("\\", "/"))
 
 
 def send_msg():
     if CURRENT is None:
         return
+    text = e_msg.get().strip()
+    if not text:
+        messagebox.showinfo("Инфо", "Пустое сообщение.")
+        return
     try:
-        call("POST", f"/admin/incidents/{CURRENT}/message", {"text": e_msg.get()})
+        call("POST", f"/admin/incidents/{CURRENT}/message", {"text": text[:1000]})
         e_msg.delete(0, tk.END)
         open_case()
     except Exception as e:
@@ -166,14 +202,19 @@ def send_msg():
 def verdict(v):
     if CURRENT is None:
         return
+    comment = e_comment.get().strip()
+    if v == "rejected" and not comment:
+        messagebox.showinfo("Инфо", "Для отклонения нужен комментарий.")
+        return
     try:
         d = call("GET", f"/admin/incidents/{CURRENT}")
         rid = (d["review"] or {}).get("id")
         if not rid:
             messagebox.showinfo("Инфо", "Ревью-кейс не создан (green-случай). Напишите текст вручную.")
             return
-        j = call("POST", f"/reviews/{rid}", {"verdict": v, "comment": ""})
+        j = call("POST", f"/reviews/{rid}", {"verdict": v, "comment": comment})
         messagebox.showinfo("Отправлено", j.get("sent_to_user", v))
+        e_comment.delete(0, tk.END)
         open_case()
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
@@ -199,14 +240,19 @@ def save_api():
 
 ttk.Button(top, text="ОК", command=save_api).pack(side="left")
 e_phone = ttk.Entry(top, width=16)
-e_phone.insert(0, "+998900000002")
 e_phone.pack(side="left", padx=4)
 e_pw = ttk.Entry(top, width=10, show="*")
-e_pw.insert(0, "spec1234")
 e_pw.pack(side="left")
 ttk.Button(top, text="Войти", command=do_login).pack(side="left", padx=4)
 lbl_user = ttk.Label(top, text="Не вошли")
 lbl_user.pack(side="left", padx=6)
+
+statsbar = ttk.Frame(root, padding=(8, 0))
+statsbar.pack(fill="x")
+lbl_stats = ttk.Label(statsbar, text="Статистика: обновите список")
+lbl_stats.pack(side="left")
+lbl_count = ttk.Label(statsbar, text="")
+lbl_count.pack(side="right")
 
 mid = ttk.Frame(root, padding=8)
 mid.pack(fill="both", expand=True)
@@ -224,10 +270,14 @@ ttk.Button(mid, text="Открыть схему ИИ", command=open_schema).pack
 
 bot = ttk.Frame(root, padding=8)
 bot.pack(fill="x")
-e_msg = ttk.Entry(bot, width=50)
+e_msg = ttk.Entry(bot, width=40)
 e_msg.pack(side="left", padx=4)
 ttk.Button(bot, text="Отправить текст", command=send_msg).pack(side="left")
+e_comment = ttk.Entry(bot, width=30)
+e_comment.pack(side="left", padx=4)
+e_comment.insert(0, "")
 ttk.Button(bot, text="✅ Регистрация завершена", command=lambda: verdict("approved")).pack(side="left", padx=4)
 ttk.Button(bot, text="🚓 Выезжаем для проверки", command=lambda: verdict("needs_field")).pack(side="left")
+ttk.Button(bot, text="✖ Отклонить", command=lambda: verdict("rejected")).pack(side="left", padx=4)
 
 root.mainloop()

@@ -48,3 +48,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // FileProvider + runtime permission helpers for camera capture
+    implementation 'androidx.core:core:1.13.1'
+}

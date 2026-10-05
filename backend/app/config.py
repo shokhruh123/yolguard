@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_DAYS: int = 7
     DATABASE_URL: str = "sqlite:///./yolguard.db"
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = ""  # override AI model chain; empty = default fallback chain
+    # MongoDB (document store for AI/CV results, processing history). Empty = disabled,
+    # SQL remains fully functional as the source of truth.
+    MONGODB_URI: str = ""
+    MONGODB_DB: str = "yolguard"
+    # Local file storage dir for photos/video/audio (metadata in SQL + Mongo).
+    UPLOAD_DIR: str = "uploads"
+    MAX_UPLOADS_PER_INCIDENT: int = 30
     # Explicit allow-list of browser origins (comma-separated in .env). Never "*".
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
 

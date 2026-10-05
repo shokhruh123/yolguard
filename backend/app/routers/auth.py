@@ -26,9 +26,15 @@ def login(body: schemas.LoginIn, db: Session = Depends(get_db)):
     return {"user": _pub(u), "access": security.access_token(u.id), "refresh": security.refresh_token(u.id)}
 
 @router.post("/refresh")
-def refresh(token: str, db: Session = Depends(get_db)):
+def refresh(token: str = "", body: schemas.RefreshIn | None = None,
+            db: Session = Depends(get_db)):
+    """New clients: POST {"token": refresh}. Legacy: ?token=... query.
+    Only refresh-typed tokens are accepted (legacy untyped tokens still work)."""
+    raw = (body.token if body and body.token else token).strip()
+    if not raw:
+        raise HTTPException(401, "Bad refresh token")
     try:
-        uid = security.decode_token(token)
+        uid = security.decode_token(raw, expect="refresh")
     except Exception:
         raise HTTPException(401, "Bad refresh token")
     u = db.get(models.User, uid)
