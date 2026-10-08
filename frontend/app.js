@@ -2,6 +2,7 @@
    Web + Android WebView share this file. IDs used here must exist in index.html. */
 let API = localStorage.getItem("yg_api") || "http://127.0.0.1:8002/api/v1";
 let TOKEN = localStorage.getItem("yg_token") || "";
+let REFRESH = localStorage.getItem("yg_refresh") || "";
 let INC = JSON.parse(localStorage.getItem("yg_inc") || "null");
 const $ = (id) => document.getElementById(id);
 const hdr = () => ({"Content-Type": "application/json", Authorization: "Bearer " + TOKEN});
@@ -31,14 +32,24 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
 }
-/* fetch wrapper: never throws raw to UI, returns {ok, status, json} */
-async function api(path, opts) {
+/* fetch wrapper: never throws raw to UI, returns {ok, status, json}.
+   On 401 (expired access token) tries the refresh token once, then retries. */
+async function api(path, opts, _retried) {
   opts = opts || {};
   opts.headers = opts.headers || hdr();
   try {
     const r = await fetch(API + path, opts);
     let j = null;
     try { j = await r.json(); } catch { j = null; }
+    if (r.status === 401 && !_retried && REFRESH && !path.startsWith("/auth/")) {
+      const ok = await doRefresh();
+      if (ok) return api(path, {...opts, headers: hdr()}, true);
+      TOKEN = ""; REFRESH = "";
+      try { localStorage.removeItem("yg_token"); localStorage.removeItem("yg_refresh"); } catch {}
+      toast(TT("t_session"));
+      go("scr-garage");
+      return {ok: false, status: 401, json: j, error: TT("t_session")};
+    }
     if (!r.ok) {
       const detail = (j && (j.detail || j.msg)) || ("HTTP " + r.status);
       return {ok: false, status: r.status, json: j, error: detail};
@@ -47,6 +58,19 @@ async function api(path, opts) {
   } catch (e) {
     return {ok: false, status: 0, json: null, error: TT("t_offline")};
   }
+}
+async function doRefresh() {
+  try {
+    const r = await fetch(API + "/auth/refresh", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({token: REFRESH})});
+    if (!r.ok) return false;
+    const j = await r.json();
+    if (!j.access) return false;
+    TOKEN = j.access;
+    try { localStorage.setItem("yg_token", TOKEN); } catch {}
+    return true;
+  } catch { return false; }
 }
 function busy(btn, on) {
   if (!btn) return;
@@ -127,6 +151,10 @@ $("btnLogin").onclick = async (e) => {
   busy(btn, false);
   if (res.ok && res.json.access) {
     TOKEN = res.json.access; localStorage.setItem("yg_token", TOKEN);
+    if (res.json.refresh) {
+      REFRESH = res.json.refresh;
+      try { localStorage.setItem("yg_refresh", REFRESH); } catch {}
+    }
     toast(TT("t_login_ok")); go("scr-home");
   } else toast(TT("t_login_err") + (res.error || ""));
 };
