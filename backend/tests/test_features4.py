@@ -144,3 +144,17 @@ def test_upload_auth_still_required():
                files={"file": ("p.jpg", JPEG, "image/jpeg")},
                data={"kind": "damage_close"})
     assert r.status_code == 401, r.text
+
+
+def test_my_incidents_history():
+    token, _ = _reg(f"+99890206{int(time.time()) % 100000:05d}")
+    h = {"Authorization": f"Bearer {token}"}
+    assert c.get("/api/v1/incidents/mine", headers=h).json() == []
+    iid = _inc(token)
+    lst = c.get("/api/v1/incidents/mine", headers=h).json()
+    assert [x["id"] for x in lst] == [iid]
+    assert set(lst[0]) >= {"id", "code", "status", "eligibility", "occurred_at"}
+    # чужой не видит чужую историю без участия
+    other, _ = _reg(f"+99890207{int(time.time()) % 100000:05d}")
+    assert c.get("/api/v1/incidents/mine",
+                 headers={"Authorization": f"Bearer {other}"}).json() == []

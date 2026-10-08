@@ -84,6 +84,8 @@ d_comment_ph: "Комментарий к вердикту (обязателен 
 d_btn_ok: "✅ Регистрация завершена", d_btn_field: "🚓 Выезжаем для проверки",
 d_btn_reject: "Отклонить", d_from_panel: "из панели",
 t_vid_chip: "Видео", t_voice_chip: "Голосовая ✓",
+mine_h: "Мои обращения", mine_login: "Войдите, затем обновите.", mine_btn: "Обновить",
+mine_empty: "Пока нет обращений",
 t_offline: "Нет связи с сервером", t_online: "Сервер на связи",
 w_steps: ["Проверка eligibility", "Фотофиксация", "Ответ ИИ", "Ответ сотрудника"],
 fl_ped: "пешеход", fl_fault: "вина", fl_docs: "доки", fl_sober: "трезв", fl_agree: "согласие",
@@ -173,6 +175,8 @@ d_comment_ph: "Hukmga izoh (rad etishda shart)...",
 d_btn_ok: "✅ Ro‘yxatdan o‘tish yakunlandi", d_btn_field: "🚓 Tekshirishga chiqamiz",
 d_btn_reject: "Rad etish", d_from_panel: "paneldan",
 t_vid_chip: "Video", t_voice_chip: "Ovozli ✓",
+mine_h: "Mening murojaatlarim", mine_login: "Kiring, keyin yangilang.", mine_btn: "Yangilash",
+mine_empty: "Hozircha murojaatlar yo‘q",
 t_offline: "Aloqa yo‘q", t_online: "Server aloqada",
 w_steps: ["Eligibility tekshiruvi", "Fotofiksatsiya", "AI javobi", "Xodim javobi"],
 fl_ped: "piyoda", fl_fault: "ayb", fl_docs: "hujjat", fl_sober: "hushyor", fl_agree: "kelishuv",
@@ -262,6 +266,8 @@ d_comment_ph: "Verdict comment (required to reject)...",
 d_btn_ok: "✅ Registration complete", d_btn_field: "🚓 On our way to check",
 d_btn_reject: "Reject", d_from_panel: "from panel",
 t_vid_chip: "Video", t_voice_chip: "Voice ✓",
+mine_h: "My cases", mine_login: "Log in, then reload.", mine_btn: "Reload",
+mine_empty: "No cases yet",
 t_offline: "Offline", t_online: "Server online",
 w_steps: ["Eligibility check", "Photo fixation", "AI answer", "Staff answer"],
 fl_ped: "pedestrian", fl_fault: "fault", fl_docs: "docs", fl_sober: "sober", fl_agree: "agreement",
@@ -293,6 +299,8 @@ function applyLang(l) {
     const p = jc.querySelector(".hint"); if (p) p.textContent = d.join_hint;
   }
   ph("#joinId", d.join_id_ph); ph("#joinCode", d.join_code_ph); set("#btnJoin", d.join_btn);
+  set("#mineH", d.mine_h); set("#btnMine", d.mine_btn);
+  const me = document.getElementById("mineEmpty"); if (me) me.textContent = d.mine_login;
   document.querySelectorAll("label.check span").forEach((el, i) => { if (d.checks[i]) el.textContent = d.checks[i]; });
   const fines = document.querySelectorAll("#w1 .fine");
   if (fines[0]) fines[0].textContent = d.f_inj;

@@ -262,6 +262,19 @@ async def ai_analysis(iid: int, db: Session = Depends(get_db),
     if not inc: raise HTTPException(404, "Not found")
     return await _run_ai(db, inc)
 
+@router.get("/mine")
+def my_incidents(db: Session = Depends(get_db),
+                 u: models.User = Depends(current_user)):
+    """История аварий водителя: случаи, где он участник, новые сверху."""
+    rows = (db.query(models.Incident)
+            .join(models.Participant,
+                  models.Participant.incident_id == models.Incident.id)
+            .filter(models.Participant.user_id == u.id)
+            .order_by(models.Incident.id.desc()).limit(50).all())
+    return [{"id": r.id, "code": r.code, "status": r.status,
+             "eligibility": r.eligibility, "occurred_at": str(r.occurred_at)}
+            for r in rows]
+
 @router.get("/{iid}/ai-history")
 def ai_history(iid: int, limit: int = Query(20, ge=1, le=100),
                db: Session = Depends(get_db),

@@ -298,6 +298,29 @@ async function loadAI() {
 }
 $("aiRetry").onclick = () => { aiLoadedFor = 0; loadAI(); };
 
+/* Мои обращения: история аварий водителя */
+$("btnMine").onclick = loadMine;
+async function loadMine() {
+  const box = $("mineList");
+  if (!TOKEN) { box.innerHTML = "<p class='hint'>" + esc(TT("t_login_first")) + "</p>"; return; }
+  box.innerHTML = "<div class='skel'></div>";
+  const res = await api("/incidents/mine");
+  if (!res.ok) { box.innerHTML = "<p class='hint'>" + esc(res.error || TT("t_net_err")) + "</p>"; return; }
+  const items = res.json || [];
+  if (!items.length) { box.innerHTML = "<p class='hint'>" + esc(TT("mine_empty")) + "</p>"; return; }
+  box.innerHTML = items.map((x) =>
+    `<button class="arow" data-id="${x.id}" data-code="${esc(x.code)}" data-status="${esc(x.status)}">`
+    + `<span class="badge ${esc(x.eligibility || "unknown")}">${esc(x.eligibility || "?")}</span>`
+    + `#${x.id} · ${esc(x.code)} · ${esc(x.status)}<br/><small>${esc(x.occurred_at || "")}</small></button>`).join("");
+  box.querySelectorAll(".arow").forEach((b) => b.addEventListener("click", () => {
+    INC = {id: +b.dataset.id, code: b.dataset.code, status: b.dataset.status};
+    localStorage.setItem("yg_inc", JSON.stringify(INC));
+    HAVE = [];
+    try { HAVE = JSON.parse(localStorage.getItem("yg_have_" + INC.id) || "[]"); } catch {}
+    paint(); go("scr-case"); showW(4);
+  }));
+}
+
 $("btnVehicle").onclick = async (e) => {
   const btn = e.currentTarget; busy(btn, true);
   const res = await api("/vehicles", {method: "POST",

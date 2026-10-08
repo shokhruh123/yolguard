@@ -208,10 +208,8 @@ def send_msg():
 def verdict(v):
     if CURRENT is None:
         return
-    comment = e_comment.get().strip()
-    if v == "rejected" and not comment:
-        messagebox.showinfo("Инфо", "Для отклонения нужен комментарий.")
-        return
+    # одно текстовое окно на всё: и сообщение водителю, и комментарий к вердикту
+    comment = e_msg.get().strip()
     try:
         d = call("GET", f"/admin/incidents/{CURRENT}")
         rid = (d["review"] or {}).get("id")
@@ -220,7 +218,18 @@ def verdict(v):
             return
         j = call("POST", f"/reviews/{rid}", {"verdict": v, "comment": comment})
         messagebox.showinfo("Отправлено", j.get("sent_to_user", v))
-        e_comment.delete(0, tk.END)
+        open_case()
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+
+
+def rerun_ai():
+    """Перезапустить ИИ-анализ по фото случая (когда разбор слабый/пустой)."""
+    if CURRENT is None:
+        return
+    try:
+        j = call("POST", f"/incidents/{CURRENT}/ai-analysis")
+        messagebox.showinfo("ИИ", f'Готово ({j.get("source", "?")}). Схема обновлена.')
         open_case()
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
@@ -288,15 +297,13 @@ ttk.Button(mid, text="Открыть схему ИИ", command=open_schema).pack
 
 bot = ttk.Frame(root, padding=8)
 bot.pack(fill="x")
-e_msg = ttk.Entry(bot, width=40)
+ttk.Label(bot, text="Текст водителю:").pack(side="left")
+e_msg = ttk.Entry(bot, width=45)
 e_msg.pack(side="left", padx=4)
 ttk.Button(bot, text="Отправить текст", command=send_msg).pack(side="left")
-e_comment = ttk.Entry(bot, width=30)
-e_comment.pack(side="left", padx=4)
-e_comment.insert(0, "")
-ttk.Button(bot, text="✅ Регистрация завершена", command=lambda: verdict("approved")).pack(side="left", padx=4)
-ttk.Button(bot, text="🚓 Выезжаем для проверки", command=lambda: verdict("needs_field")).pack(side="left")
-ttk.Button(bot, text="✖ Отклонить", command=lambda: verdict("rejected")).pack(side="left", padx=4)
+ttk.Button(bot, text="🔄 ИИ заново", command=rerun_ai).pack(side="left", padx=4)
+ttk.Button(bot, text="🚓 Выезжаем", command=lambda: verdict("needs_field")).pack(side="left")
+ttk.Button(bot, text="✅ Зарегистрировано успешно", command=lambda: verdict("approved")).pack(side="left", padx=4)
 ttk.Button(bot, text="📦 Собрать пакет", command=build_claim).pack(side="left")
 
 root.mainloop()
