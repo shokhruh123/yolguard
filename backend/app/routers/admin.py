@@ -2,7 +2,7 @@
 Видит: triage, фото, чертёж ИИ, довод ИИ, пострадавших, рекомендации, схему, подтверждения."""
 import json
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from ..db import get_db
 from .. import models, schemas
@@ -11,24 +11,50 @@ from .deps import need_role
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-def _brief(inc: models.Incident) -> dict:
+def _plates_map(db: Session, iids: list[int]) -> dict[int, list[str]]:
+    """Госномера участников пачкой (для списка)."""
+    if not iids:
+        return {}
+    rows = (db.query(models.Participant.incident_id, models.Vehicle.plate)
+            .join(models.Vehicle, models.Vehicle.id == models.Participant.vehicle_id)
+            .filter(models.Participant.incident_id.in_(iids)).all())
+    out: dict[int, list[str]] = {}
+    for iid, plate in rows:
+        out.setdefault(iid, []).append(plate)
+    return out
+
+def _brief(inc: models.Incident, plates: list[str] | None = None) -> dict:
     return {"id": inc.id, "code": inc.code, "status": inc.status,
             "eligibility": inc.eligibility, "reason": inc.eligibility_reason,
-            "has_injury": bool(inc.has_injury), "occurred_at": str(inc.occurred_at)}
+            "has_injury": bool(inc.has_injury), "occurred_at": str(inc.occurred_at),
+            "plates": plates or []}
 
 @router.get("/incidents")
 def list_incidents(db: Session = Depends(get_db),
                    skip: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=500),
                    status: str = Query("", max_length=20),
                    eligibility: str = Query("", max_length=10),
+                   search: str = Query("", max_length=30,
+                                       description="Код случая или госномер (01B888AA)"),
                    _s: models.User = Depends(need_role("specialist"))):
     q = db.query(models.Incident).order_by(models.Incident.id.desc())
     if status:
         q = q.filter_by(status=status)
     if eligibility:
         q = q.filter_by(eligibility=eligibility)
+    if search.strip():
+        like = f"%{search.strip().upper()}%"
+        plate_iids = [r[0] for r in
+                      db.query(models.Participant.incident_id)
+                      .join(models.Vehicle,
+                            models.Vehicle.id == models.Participant.vehicle_id)
+                      .filter(models.Vehicle.plate.ilike(like)).distinct().all()]
+        q = q.filter(or_(models.Incident.code.ilike(like),
+                         models.Incident.id.in_(plate_iids) if plate_iids else False))
     total = q.count()
-    return {"total": total, "items": [_brief(r) for r in q.offset(skip).limit(limit).all()]}
+    rows = q.offset(skip).limit(limit).all()
+    pmap = _plates_map(db, [r.id for r in rows])
+    return {"total": total, "items": [_brief(r, pmap.get(r.id, [])) for r in rows]}
 
 @router.get("/stats")
 def stats(db: Session = Depends(get_db),

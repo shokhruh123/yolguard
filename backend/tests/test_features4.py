@@ -158,3 +158,26 @@ def test_my_incidents_history():
     other, _ = _reg(f"+99890207{int(time.time()) % 100000:05d}")
     assert c.get("/api/v1/incidents/mine",
                  headers={"Authorization": f"Bearer {other}"}).json() == []
+
+
+def test_vehicle_linked_and_searchable():
+    import secrets as _s
+    suf = _s.token_hex(3).upper()
+    token, _ = _reg(f"+99890208{int(time.time()) % 100000:05d}")
+    h = {"Authorization": f"Bearer {token}"}
+    plate = f"01T{suf}AA"
+    assert c.post("/api/v1/vehicles", json={"plate": plate, "make": "Chevrolet",
+                                             "model": "Cobalt", "year": 2020},
+                  headers=h).status_code == 201
+    iid = _inc(token)
+    r = c.post("/api/v1/auth/login",
+               json={"phone": "+998900000002", "password": "spec1234"})
+    if r.status_code != 200:
+        return
+    sh = {"Authorization": f"Bearer {r.json()['access']}"}
+    found = c.get(f"/api/v1/admin/incidents?search={plate}", headers=sh).json()
+    assert any(x["id"] == iid for x in found["items"]), found
+    assert plate in found["items"][0].get("plates", []) or \
+        any(plate in x.get("plates", []) for x in found["items"])
+    missing = c.get("/api/v1/admin/incidents?search=99ZZZ999", headers=sh).json()
+    assert all(x["id"] != iid for x in missing["items"])

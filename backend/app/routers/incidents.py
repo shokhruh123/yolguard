@@ -79,7 +79,11 @@ def create_incident(body: schemas.IncidentCreate, db: Session = Depends(get_db),
     code = secrets.token_hex(3).upper()
     inc = models.Incident(code=code, creator_id=u.id, lat=body.lat, lon=body.lon)
     db.add(inc); db.commit(); db.refresh(inc)
-    db.add(models.Participant(incident_id=inc.id, user_id=u.id, side="A"))
+    # привязываем последнее авто водителя, чтобы сотрудник видел госномер в списке
+    veh = (db.query(models.Vehicle).filter_by(owner_id=u.id)
+           .order_by(models.Vehicle.id.desc()).first())
+    db.add(models.Participant(incident_id=inc.id, user_id=u.id, side="A",
+                              vehicle_id=veh.id if veh else None))
     db.commit()
     return {"id": inc.id, "code": code, "status": inc.status}
 
@@ -92,7 +96,10 @@ def join_incident(iid: int, code: str, db: Session = Depends(get_db),
         raise HTTPException(409, "Already joined")
     if db.query(models.Participant).filter_by(incident_id=iid).count() >= 2:
         raise HTTPException(409, "Session full (2 drivers max)")
-    db.add(models.Participant(incident_id=iid, user_id=u.id, side="B")); db.commit()
+    veh = (db.query(models.Vehicle).filter_by(owner_id=u.id)
+           .order_by(models.Vehicle.id.desc()).first())
+    db.add(models.Participant(incident_id=iid, user_id=u.id, side="B",
+                              vehicle_id=veh.id if veh else None)); db.commit()
     return {"joined": True, "side": "B"}
 
 @router.post("/{iid}/triage")

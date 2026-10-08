@@ -71,9 +71,13 @@ def do_login():
         messagebox.showerror("Ошибка", str(e))
 
 
-def refresh_list():
+def refresh_list(query=""):
+    import urllib.parse
     try:
-        data = call("GET", "/admin/incidents?limit=200")
+        path = "/admin/incidents?limit=200"
+        if query.strip():
+            path += "&search=" + urllib.parse.quote(query.strip())
+        data = call("GET", path)
         rows = data.get("items", []) if isinstance(data, dict) else data
         total = data.get("total", len(rows)) if isinstance(data, dict) else len(rows)
     except Exception as e:
@@ -96,9 +100,10 @@ def refresh_list():
         CASES[x["id"]] = x
         IDS.append(x["id"])
         flag = " [ПОСТРАДАВШИЕ]" if x["has_injury"] else ""
-        lst.insert(tk.END, f'#{x["id"]} [{x["eligibility"]}] {x["code"]} {x["status"]}{flag}')
+        plates = " ".join(x.get("plates", []))
+        lst.insert(tk.END, f'#{x["id"]} [{x["eligibility"]}] {x["code"]} {x["status"]}'
+                           f'{(" " + plates) if plates else ""}{flag}')
     lbl_count.config(text=f"Всего: {total}, показано: {len(rows)}")
-
 
 def open_case(_ev=None):
     global CURRENT, LAST_SVG
@@ -283,7 +288,15 @@ lbl_count.pack(side="right")
 
 mid = ttk.Frame(root, padding=8)
 mid.pack(fill="both", expand=True)
-ttk.Button(mid, text="Обновить список", command=refresh_list).pack(anchor="w")
+srow = ttk.Frame(mid)
+srow.pack(fill="x", pady=2)
+ttk.Button(srow, text="Обновить список", command=lambda: refresh_list(e_search.get())).pack(side="left")
+e_search = ttk.Entry(srow, width=22)
+e_search.pack(side="left", padx=6)
+e_search.insert(0, "")
+ttk.Button(srow, text="Найти", command=lambda: refresh_list(e_search.get())).pack(side="left")
+ttk.Label(srow, text="код или госномер: 01B888AA").pack(side="left", padx=4)
+e_search.bind("<Return>", lambda _e: refresh_list(e_search.get()))
 lst = tk.Listbox(mid, height=8)
 lst.pack(fill="x", pady=4)
 lst.bind("<Double-Button-1>", open_case)
