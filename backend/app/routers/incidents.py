@@ -156,9 +156,10 @@ def claim_package(iid: int, db: Session = Depends(get_db),
     if not inc: raise HTTPException(404, "Not found")
     ev = db.query(models.Evidence).filter_by(incident_id=iid).all()
     parts = db.query(models.Participant).filter_by(incident_id=iid).all()
-    # Европротокол требует ровно двух подтвердивших участников
-    if len(parts) != 2 or not all(p.confirmed for p in parts):
-        raise HTTPException(400, "Оба участника должны подтвердить схему/данные")
+    # Процесс не тянем: достаточно подтверждения создателя случая (сторона A).
+    # Второй водитель может подключиться по коду, но его подтверждение не требуется.
+    if not any(p.side == "A" and p.confirmed for p in parts):
+        raise HTTPException(400, "Создатель случая должен подтвердить схему/данные")
     payload = {"incident_id": iid, "eligibility": [inc.eligibility, inc.eligibility_reason],
                "evidence": [{"kind": e.kind, "sha256": e.sha256} for e in ev]}
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)

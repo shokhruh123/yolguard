@@ -19,8 +19,15 @@ def _model_url(model: str) -> str:
     return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def heuristic_svg(label_a: str = "A", label_b: str = "B") -> str:
+def heuristic_svg(label_a: str = "A", label_b: str = "B", impact: str = "") -> str:
+    """Эвристическая схема: точка контакта и подпись зависят от слов водителя
+    (impact_part), поэтому схема НЕ одинаковая для всех случаев."""
     la, lb = html.escape(label_a)[:12], html.escape(label_b)[:12]
+    seed = sum(ord(ch) for ch in (impact or "")) % 120
+    cx = 150 + seed  # точка контакта гуляет по дороге
+    cap = html.escape((impact or "").strip())[:40]
+    cap_svg = (f'<text x="200" y="200" fill="#9aa7bd" font-size="12" text-anchor="middle">{cap}</text>'
+               if cap else "")
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220">'
         '<rect width="400" height="220" fill="#0e1626"/>'
@@ -32,9 +39,10 @@ def heuristic_svg(label_a: str = "A", label_b: str = "B") -> str:
         f'<rect x="228" y="104" width="86" height="30" rx="6" fill="#c0392b"/><text x="271" y="124" fill="#fff" font-size="14" text-anchor="middle">{lb}</text>'
         '<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
         '<path d="M0,0 L8,4 L0,8" fill="none" stroke="#22c07a" stroke-width="2"/></marker></defs>'
-        '<circle cx="212" cy="100" r="9" fill="none" stroke="#f5a524" stroke-width="3"/>'
-        '<circle cx="212" cy="100" r="3" fill="#f5a524"/>'
-        '<text x="212" y="160" fill="#9aa7bd" font-size="12" text-anchor="middle">предполагаемая точка контакта</text>'
+        f'<circle cx="{cx}" cy="100" r="9" fill="none" stroke="#f5a524" stroke-width="3"/>'
+        f'<circle cx="{cx}" cy="100" r="3" fill="#f5a524"/>'
+        f'<text x="{cx}" y="160" fill="#9aa7bd" font-size="12" text-anchor="middle">предполагаемая точка контакта</text>'
+        f'{cap_svg}'
         "</svg>"
     )
 
@@ -93,9 +101,11 @@ PROMPT = (
 async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
     """Возвращает {source, description, casualties_note, actions, svg, plates, damage_severity}."""
     base = heuristic_reason(triage, kinds)
+    impact = str(triage.get("impact_part", "") or "")
     key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
     if not key:
-        return {"source": "heuristic (нет GEMINI_API_KEY)", **base, "svg": heuristic_svg()}
+        return {"source": "heuristic (нет GEMINI_API_KEY)", **base,
+                "svg": heuristic_svg(impact=impact)}
     parts: list[dict] = [{"text": PROMPT + f"\nДанные: {json.dumps(triage, ensure_ascii=False)}, фото: {kinds}"}]
     for img in images[:3]:
         parts.append({"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(img).decode()}})
@@ -128,7 +138,7 @@ async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
                     if impact:
                         desc = f"{desc}\n\n🅰️🅱️ Удар: {impact}"
                     # SVG от LLM — чужой контент: убираем script/on* перед сохранением
-                    svg_raw = str(data.get("svg") or heuristic_svg())
+                    svg_raw = str(data.get("svg") or heuristic_svg(impact=impact))
                     plates = data.get("plates") or {}
                     sev = str(data.get("damage_severity", "unknown")).lower()
                     if sev not in ("light", "medium", "heavy"):
@@ -148,4 +158,5 @@ async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
                     last_err = f"{model}: {type(e).__name__}"
                     await asyncio.sleep(1.5)
                     continue
-    return {"source": f"heuristic (Gemini недоступен: {last_err})", **base, "svg": heuristic_svg()}
+    return {"source": f"heuristic (Gemini недоступен: {last_err})", **base,
+            "svg": heuristic_svg(impact=impact)}

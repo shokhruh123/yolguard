@@ -133,11 +133,7 @@
           <button class="ghost" id="btnAck">Понял, жду</button>
           <button class="ghost" id="btnHelp">Нужна помощь</button>
         </div>
-        <h3 style="margin-top:14px">Пакет для страховой</h3>
-        <p class="hint">Пакет собирает сотрудник (роль specialist).</p>
-        <button class="ghost" id="btnSpecLogin">Войти специалистом</button>
-        <button class="primary" id="btnClaim">Пакет для страховой</button>
-        <pre id="claimOut">—</pre>
+        <p class="fine">Пакет для страховой собирает сотрудник в рабочей панели — он придёт следующим сообщением.</p>
       </div>
       <div class="wpager">
         <button class="ghost" id="wPrev">Назад</button>
@@ -184,47 +180,12 @@
         </div>
       </div>
     </section>
-    <!-- ADMIN -->
-    <section class="screen" id="scr-admin">
-      <p class="kicker">Сотрудник</p>
-      <h2>Панель контроля</h2>
-      <div class="row2 stats" id="adminStats" aria-live="polite"></div>
-      <p class="hint">Красные случаи (пострадавшие / ГАИ) — вверху. Нажмите на случай для досье.</p>
-      <div class="frow filters">
-        <select id="fltStatus" aria-label="Фильтр по статусу">
-          <option value="">Все статусы</option>
-          <option value="triage">triage</option>
-          <option value="evidence">evidence</option>
-          <option value="diagram">diagram</option>
-          <option value="review">review</option>
-          <option value="ready">ready</option>
-          <option value="escalated">escalated</option>
-          <option value="closed">closed</option>
-        </select>
-        <select id="fltElig" aria-label="Фильтр по eligibility">
-          <option value="">Все цвета</option>
-          <option value="red">red</option>
-          <option value="yellow">yellow</option>
-          <option value="green">green</option>
-        </select>
-        <input id="fltSearch" placeholder="Поиск: код/ID" aria-label="Поиск по коду или ID"/>
-      </div>
-      <button class="ghost" id="btnAdminReload">Обновить список</button>
-      <p class="fine" id="adminCount" aria-live="polite"></p>
-      <div id="adminList"></div>
-      <div class="frow pager">
-        <button class="ghost" id="adminPrev">← Назад</button>
-        <button class="ghost" id="adminNext">Далее →</button>
-      </div>
-      <div id="adminDetail" class="card" style="display:none"></div>
-    </section>
   </main>
 
   <nav class="tabbar" role="tablist" aria-label="Разделы">
     <button class="tab active" role="tab" aria-selected="true" data-s="scr-home">SOS</button>
     <button class="tab" role="tab" aria-selected="false" data-s="scr-case">Случай</button>
     <button class="tab" role="tab" aria-selected="false" data-s="scr-garage">Гараж</button>
-    <button class="tab" role="tab" aria-selected="false" data-s="scr-admin">Панель</button>
   </nav>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>

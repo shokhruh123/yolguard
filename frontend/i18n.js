@@ -2,7 +2,7 @@
    Static texts: selector map. Dynamic: T(key). Language in localStorage yg_lang. */
 const I18N = {
 ru: {
-tabs: ["SOS", "Случай", "Гараж", "Панель"],
+tabs: ["SOS", "Случай", "Гараж"],
 home_kicker: "Экспресс-помощь", home_h1: "Попали в ДТП?<br/>Действуйте спокойно.",
 home_sub: "Сфотографируйте — ИИ разберёт, сотрудник подтвердит.", sos: "Я попал в ДТП",
 stats: ["код сессии", "статус", "фото"], how: "Как это работает",
@@ -42,9 +42,9 @@ t_no_inc: "Сначала нажмите «Я попал в ДТП» на гла
 t_login_ok: "Вход выполнен", t_login_err: "Ошибка входа: ",
 t_case_err: "Не удалось создать случай: ", t_join_need: "Введите ID случая и код сессии",
 t_join_err: "Не удалось подключиться: ", t_joined: "Вы подключены как сторона B",
-t_triage_err: "Проверка не удалась: ", t_red: "Красный сценарий: следуйте официальному процессу (102).",
+t_triage_err: "Проверка не удалась: ", t_red: "Красный сценарий: наряд выезжает, ожидайте на месте.",
 t_evl_err: "Не удалось: ", t_dia_err: "Схема не собралась: ",
-t_confirmed: "Подтверждено. Второй водитель подтверждает со своего телефона.",
+t_confirmed: "Подтверждено. Сотрудник увидит подтверждение в рабочей панели.",
 t_conf_err: "Ошибка: ", t_uploading: "Загружаем фото…", t_saved: "Фото сохранено",
 t_upl_err: "Ошибка загрузки: ", t_offline_q: "Нет связи — фото в очереди, отправим автоматически",
 t_msg_q: "Нет связи — сообщение в очереди", t_q_sent: "Очередь отправлена",
@@ -89,7 +89,7 @@ d_inj_badge: "ПОСТРАДАВШИЕ",
 severities: {light: "лёгкие", medium: "средние", heavy: "тяжёлые", unknown: "не определена"}
 },
 uz: {
-tabs: ["SOS", "Holat", "Garaj", "Panel"],
+tabs: ["SOS", "Holat", "Garaj"],
 home_kicker: "Tezkor yordam", home_h1: "YTHga uchradingizmi?<br/>Vahimasiz harakat qiling.",
 home_sub: "Suratga oling — AI tahlil qiladi, xodim tasdiqlaydi.", sos: "Men YTHga uchradim",
 stats: ["sessiya kodi", "holat", "foto"], how: "Qanday ishlaydi",
@@ -129,9 +129,9 @@ t_no_inc: "Avval bosh ekranda «Men YTHga uchradim» ni bosing",
 t_login_ok: "Kirish bajarildi", t_login_err: "Kirish xatosi: ",
 t_case_err: "Holat yaratilmadi: ", t_join_need: "Holat ID va sessiya kodini kiriting",
 t_join_err: "Ulanib bo‘lmadi: ", t_joined: "B tomon sifatida ulandingiz",
-t_triage_err: "Tekshiruv o‘tmadi: ", t_red: "Qizil ssenariy: rasmiy jarayonga amal qiling (102).",
+t_triage_err: "Tekshiruv o‘tmadi: ", t_red: "Qizil ssenariy: naryad yo‘lda, joyida kuting.",
 t_evl_err: "Bo‘lmadi: ", t_dia_err: "Chizma yig‘ilmadi: ",
-t_confirmed: "Tasdiqlandi. Ikkinchi haydovchi o‘z telefonidan tasdiqlaydi.",
+t_confirmed: "Tasdiqlandi. Xodim tasdiqni ish panelida ko‘radi.",
 t_conf_err: "Xato: ", t_uploading: "Foto yuklanmoqda…", t_saved: "Foto saqlandi",
 t_upl_err: "Yuklash xatosi: ", t_offline_q: "Aloqa yo‘q — foto navbatda, avtomatik yuboramiz",
 t_msg_q: "Aloqa yo‘q — xabar navbatda", t_q_sent: "Navbat yuborildi",
@@ -176,7 +176,7 @@ d_inj_badge: "JABRLANGANLAR",
 severities: {light: "yengil", medium: "o‘rtacha", heavy: "og‘ir", unknown: "aniqlanmagan"}
 },
 en: {
-tabs: ["SOS", "Case", "Garage", "Panel"],
+tabs: ["SOS", "Case", "Garage"],
 home_kicker: "Express help", home_h1: "Had an accident?<br/>Stay calm.",
 home_sub: "Take photos — AI analyses, staff confirms.", sos: "I had an accident",
 stats: ["session code", "status", "photos"], how: "How it works",
@@ -216,9 +216,9 @@ t_no_inc: "First tap “I had an accident” on the home screen",
 t_login_ok: "Logged in", t_login_err: "Login error: ",
 t_case_err: "Could not create case: ", t_join_need: "Enter case ID and session code",
 t_join_err: "Could not join: ", t_joined: "Joined as side B",
-t_triage_err: "Check failed: ", t_red: "Red scenario: follow the official process (102).",
+t_triage_err: "Check failed: ", t_red: "Red scenario: unit dispatched, wait on site.",
 t_evl_err: "Failed: ", t_dia_err: "Diagram failed: ",
-t_confirmed: "Confirmed. The second driver confirms from their phone.",
+t_confirmed: "Confirmed. Staff will see it in the work panel.",
 t_conf_err: "Error: ", t_uploading: "Uploading photo…", t_saved: "Photo saved",
 t_upl_err: "Upload error: ", t_offline_q: "Offline — photo queued, will send automatically",
 t_msg_q: "Offline — message queued", t_q_sent: "Queue sent",
@@ -273,7 +273,7 @@ function applyLang(l) {
   const set = (sel, v) => { const el = document.querySelector(sel); if (el) el.innerHTML = v; };
   const ph = (sel, v) => { const el = document.querySelector(sel); if (el) el.placeholder = v; };
   document.querySelectorAll(".tab").forEach((b) => {
-    const i = { "scr-home": 0, "scr-case": 1, "scr-garage": 2, "scr-admin": 3 }[b.dataset.s];
+    const i = { "scr-home": 0, "scr-case": 1, "scr-garage": 2 }[b.dataset.s];
     if (i !== undefined) b.textContent = d.tabs[i];
   });
   set("#scr-home .kicker", d.home_kicker); set("#scr-home h1", d.home_h1);

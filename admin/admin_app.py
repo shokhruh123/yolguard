@@ -226,6 +226,18 @@ def verdict(v):
         messagebox.showerror("Ошибка", str(e))
 
 
+def build_claim():
+    """Собрать страховой пакет (нужно подтверждение создателя случая)."""
+    if CURRENT is None:
+        return
+    try:
+        j = call("POST", f"/incidents/{CURRENT}/claim-package")
+        messagebox.showinfo("Пакет собран", "package_hash:\n" + j.get("package_hash", "?"))
+        open_case()
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+
+
 root = tk.Tk()
 root.title("Yo'l Guard — панель сотрудника")
 root.geometry("760x640")
@@ -285,5 +297,6 @@ e_comment.insert(0, "")
 ttk.Button(bot, text="✅ Регистрация завершена", command=lambda: verdict("approved")).pack(side="left", padx=4)
 ttk.Button(bot, text="🚓 Выезжаем для проверки", command=lambda: verdict("needs_field")).pack(side="left")
 ttk.Button(bot, text="✖ Отклонить", command=lambda: verdict("rejected")).pack(side="left", padx=4)
+ttk.Button(bot, text="📦 Собрать пакет", command=build_claim).pack(side="left")
 
 root.mainloop()

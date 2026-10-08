@@ -79,6 +79,17 @@ def test_heuristic_has_plates_and_severity():
     assert res["damage_severity"] == "unknown"
 
 
+def test_heuristic_svg_varies_by_impact():
+    from app.services.ai import heuristic_svg
+    a = heuristic_svg(impact="Передний бампер")
+    b = heuristic_svg(impact="Задний бампер")
+    c = heuristic_svg()
+    assert a.startswith("<svg") and b.startswith("<svg")
+    assert a != b, "схема должна отличаться для разного impact_part"
+    assert "Передний бампер" in a
+    assert c != a
+
+
 def test_insurer_read_only():
     drv, _ = _reg(f"+99890203{int(time.time()) % 100000:05d}")
     iid = _inc(drv)

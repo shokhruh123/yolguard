@@ -66,21 +66,25 @@ def test_diagram_labels_escaped():
     assert "&lt;script&gt;" in r.json()["svg"]
 
 
-def test_claim_needs_two_confirmed():
+def test_claim_needs_creator_confirm():
     token, _, _ = _reg(f"+99890105{int(time.time()) % 100000:05d}")
     iid, _ = _inc(token)
-    # only 1 participant (creator, side A) — must fail even after confirm
-    c.post(f"/api/v1/incidents/{iid}/confirm",
-           headers={"Authorization": f"Bearer {token}"})
-    # need specialist for claim-package: promote via login as seed specialist
     r = c.post("/api/v1/auth/login",
                json={"phone": "+998900000002", "password": "spec1234"})
     if r.status_code != 200:  # seed user may not exist in this db
         return
     spec = r.json()["access"]
+    # без подтверждения создателя — 400
+    r0 = c.post(f"/api/v1/incidents/{iid}/claim-package",
+                headers={"Authorization": f"Bearer {spec}"})
+    assert r0.status_code == 400, r0.text
+    # создатель подтвердил — пакета собирается и без второго водителя
+    c.post(f"/api/v1/incidents/{iid}/confirm",
+           headers={"Authorization": f"Bearer {token}"})
     r2 = c.post(f"/api/v1/incidents/{iid}/claim-package",
                 headers={"Authorization": f"Bearer {spec}"})
-    assert r2.status_code == 400, r2.text
+    assert r2.status_code == 201, r2.text
+    assert "package_hash" in r2.json()
 
 
 def test_verdict_guards():
