@@ -16,7 +16,10 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 # kind значений фото: только известные + other. Защита от path traversal
 # (kind раньше вставлялся в имя файла без sanitize) и от мусорных видов.
-ALLOWED_KINDS = set(REQUIRED_EVIDENCE) | {"doc_photo", "other"}
+# kind значений: фото из REQUIRED_EVIDENCE + документы/прочее + медиа.
+# Фото влияют на completeness; видео/аудио — дополнительные материалы.
+MEDIA_KINDS = {"video_scene", "voice_note"}
+ALLOWED_KINDS = set(REQUIRED_EVIDENCE) | {"doc_photo", "other"} | MEDIA_KINDS
 
 def _check_kind(kind: str) -> str:
     k = (kind or "").strip()
@@ -27,11 +30,14 @@ def _check_kind(kind: str) -> str:
 async def _run_ai(db: Session, inc: models.Incident) -> dict:
     """Запускает ИИ по фото+triage, сохраняет результат, возвращает его."""
     ev = db.query(models.Evidence).filter_by(incident_id=inc.id).all()
-    # читаем не более 3 файлов (столько реально уходит в модель) — защита RAM
+    # в ИИ уходят только фото (mime image/* или legacy-строки без mime);
+    # видео/аудио в модель не отправляем. Читаем не более 3 файлов.
     images: list[bytes] = []
     for e in ev:
         if len(images) >= 3:
             break
+        if e.mime and not e.mime.startswith("image/"):
+            continue
         p = e.file_path[1:] if e.file_path.startswith("/") else e.file_path
         if os.path.exists(p):
             with open(p, "rb") as f: images.append(f.read())
@@ -56,12 +62,16 @@ async def _run_ai(db: Session, inc: models.Incident) -> dict:
         mongo.store_ai_analysis(inc.id, {"source": res["source"], "description": res["description"],
                                          "casualties_note": res["casualties_note"],
                                          "actions": res["actions"], "svg": res["svg"]},
-                                {"kinds": [e.kind for e in ev], "images_sent": len(images)})
+                                {"kinds": [e.kind for e in ev], "images_sent": len(images),
+                                 "plates": res.get("plates", {"a": "", "b": ""}),
+                                 "damage_severity": res.get("damage_severity", "unknown")})
         mongo.log_event(inc.id, "ai_analysis", f"source={res['source']}")
     except Exception:
         pass
     return {"source": res["source"], "description": res["description"],
-            "casualties_note": res["casualties_note"], "actions": res["actions"], "svg": res["svg"]}
+            "casualties_note": res["casualties_note"], "actions": res["actions"], "svg": res["svg"],
+            "plates": res.get("plates", {"a": "", "b": ""}),
+            "damage_severity": res.get("damage_severity", "unknown")}
 
 @router.post("", status_code=201)
 def create_incident(body: schemas.IncidentCreate, db: Session = Depends(get_db),
@@ -158,12 +168,26 @@ def claim_package(iid: int, db: Session = Depends(get_db),
         inc.status = "ready"; db.commit()
     return {"package_hash": h, "payload": payload}
 
+@router.get("/{iid}/claim-package")
+def read_claim_package(iid: int, db: Session = Depends(get_db),
+                       u: models.User = Depends(current_user)):
+    """Чтение claim-пакета: участники + specialist/admin + insurer (read-only)."""
+    if u.role not in ("specialist", "admin", "insurer"):
+        _can_read(iid, u, db)
+    elif not db.get(models.Incident, iid):
+        raise HTTPException(404, "Not found")
+    claim = db.query(models.ClaimPackage).filter_by(incident_id=iid).first()
+    if not claim: raise HTTPException(404, "No claim package yet")
+    return {"package_hash": claim.package_hash,
+            "payload": json.loads(claim.payload_json)}
+
 @router.post("/{iid}/evidence-upload", status_code=201)
 async def evidence_upload(iid: int, kind: str = Form(...), file: UploadFile = File(...),
                           db: Session = Depends(get_db),
                           u: models.User = Depends(current_user)):
-    """Загрузка реального фото: валидация типа (magic bytes), лимит 10 МБ,
-    ресайз до 1600px, EXIF GPS -> БД. Доступ только участникам инцидента."""
+    """Загрузка файла: фото (magic bytes, 10 МБ, ресайз 1600px, EXIF GPS),
+    видео MP4/WEBM (до 50 МБ), аудио MP3/OGG/WAV/FLAC (до 10 МБ).
+    Доступ только участникам инцидента."""
     inc = db.get(models.Incident, iid)
     if not inc or inc.status == "escalated":
         raise HTTPException(400, "Incident not in evidence stage")
@@ -175,7 +199,7 @@ async def evidence_upload(iid: int, kind: str = Form(...), file: UploadFile = Fi
         raise HTTPException(409, "Too many uploads for this incident")
     raw = await file.read()
     try:
-        proc = img_svc.process_upload(raw)
+        proc = img_svc.process_media(raw) if kind in MEDIA_KINDS else img_svc.process_upload(raw)
     except img_svc.UploadError as e:
         raise HTTPException(400, str(e))
     data = proc["bytes"]
@@ -276,4 +300,10 @@ def post_message(iid: int, body: schemas.MessageIn, db: Session = Depends(get_db
     if not body.text.strip(): raise HTTPException(400, "Пустое сообщение")
     m = models.Message(incident_id=iid, sender_id=u.id, sender_role=u.role, text=body.text.strip()[:1000])
     db.add(m); db.commit(); db.refresh(m)
+    try:
+        from ..services import push as push_svc
+        push_svc.notify_participants(db, iid, u.id, "Yo'l Guard: новое сообщение",
+                                     body.text.strip()[:120])
+    except Exception:
+        pass
     return {"id": m.id, "at": str(m.created_at)}

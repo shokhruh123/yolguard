@@ -258,8 +258,14 @@ pre{background:#0a0a0c;border:1px solid var(--line);border-radius:12px;padding:1
   background-size:200% 100%;animation:shimmer 1.4s linear infinite}
 @keyframes shimmer{to{background-position:-200% 0}}
 
-/* ---------- busy / disabled ---------- */
-button:disabled{opacity:.55;cursor:wait}
+/* ---------- voice / video / lang ---------- */
+#btnRec.rec{border-color:var(--bad);color:#ff9a9a;animation:recpulse 1.2s ease-in-out infinite}
+@keyframes recpulse{50%{background:rgba(239,90,90,.15)}}
+.thumbs video{width:160px;max-height:120px;border-radius:12px;border:1px solid var(--line-2);background:#000}
+.chip audio{width:150px;height:28px;margin-left:6px;vertical-align:middle}
+.langBtn.activeLang{border-color:var(--accent);color:var(--accent-hi);background:rgba(245,165,36,.08)}
+
+/* ---------- busy / disabled ---------- */button:disabled{opacity:.55;cursor:wait}
 .primary.busy,.ghost.busy{position:relative;color:transparent!important}
 .primary.busy::after,.ghost.busy::after{content:"";position:absolute;left:50%;top:50%;
   width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;

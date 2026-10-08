@@ -5,11 +5,52 @@ import io
 from typing import Optional
 from PIL import Image, ExifTags
 
-MAX_BYTES = 10 * 1024 * 1024          # 10 MB hard cap
+MAX_BYTES = 10 * 1024 * 1024          # 10 MB hard cap (photo/audio)
+MAX_VIDEO_BYTES = 50 * 1024 * 1024    # 50 MB for short scene clips
 MAX_DIM = 1600                        # longest side after resize
 # content-type returned to clients, keyed by the format Pillow reports
 _FMT_TO_MIME = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 _FMT_TO_EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
+# container magic -> (mime, ext) for video/audio (stored as-is, metadata only)
+def _sniff_media(data: bytes) -> Optional[tuple[str, str]]:
+    """Return (mime, ext) for supported video/audio containers, else None."""
+    if len(data) < 12:
+        return None
+    # mp4/mov: ....ftyp
+    if data[4:8] == b"ftyp" and data[8:12] in (b"isom", b"mp41", b"mp42", b"M4V ", b"qt  "):
+        return ("video/mp4", ".mp4")
+    # webm/mkv: EBML header
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return ("video/webm", ".webm")
+    if data[:3] == b"ID3" or (len(data) > 2 and data[:2] == b"\xff\xfb"):
+        return ("audio/mpeg", ".mp3")
+    if data[:4] == b"OggS":
+        return ("audio/ogg", ".ogg")
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return ("audio/wav", ".wav")
+    if data[:4] == b"fLaC":
+        return ("audio/flac", ".flac")
+    return None
+
+
+def process_media(data: bytes) -> dict:
+    """Validate + store a video/audio upload without transcoding.
+
+    Returns {"bytes", "mime", "ext", "gps_lat", "gps_lon"} (gps always None).
+    Raises UploadError on empty/oversized/unsupported input.
+    """
+    if not data:
+        raise UploadError("Пустой файл")
+    if len(data) > MAX_VIDEO_BYTES:
+        raise UploadError("Файл больше 50 МБ")
+    found = _sniff_media(data)
+    if found is None:
+        raise UploadError("Только MP4/WEBM видео или MP3/OGG/WAV/FLAC аудио")
+    mime, ext = found
+    if mime.startswith("audio") and len(data) > MAX_BYTES:
+        raise UploadError("Аудио больше 10 МБ")
+    return {"bytes": data, "mime": mime, "ext": ext,
+            "gps_lat": None, "gps_lon": None}
 
 # EXIF tag ids (resolved once) for GPS lookup
 _GPSINFO_TAG = next((k for k, v in ExifTags.TAGS.items() if v == "GPSInfo"), 34853)

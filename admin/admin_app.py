@@ -130,6 +130,12 @@ def open_case(_ev=None):
     if d["ai"]:
         txt.insert(tk.END, f'\n--- Разбор ИИ ({d["ai"]["source"]}) ---\n{d["ai"]["description"]}\n')
         txt.insert(tk.END, f'Пострадавшие (из triage, ИИ не выдумывает): {d["ai"]["casualties_note"]}\n')
+        pl = (d["ai"] or {}).get("plates") or {}
+        if pl.get("a") or pl.get("b"):
+            txt.insert(tk.END, f'Номера с фото: A={pl.get("a") or "—"} B={pl.get("b") or "—"}\n')
+        sev = (d["ai"] or {}).get("damage_severity", "unknown")
+        if sev and sev != "unknown":
+            txt.insert(tk.END, f'Тяжесть ущерба: {sev}\n')
         txt.insert(tk.END, "Схема ИИ: черновик, см. кнопку «Открыть схему ИИ».\nЧто делать:\n")
         for a in d["ai"]["actions"]:
             txt.insert(tk.END, f"  - {a}\n")

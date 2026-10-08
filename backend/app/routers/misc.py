@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from ..db import get_db
 from .. import models, schemas
+from ..services import push as push_svc
 from .deps import current_user, need_role
 
 router = APIRouter(tags=["misc"])
@@ -53,4 +54,29 @@ def verdict(rid: int, body: schemas.ReviewIn, db: Session = Depends(get_db),
     db.add(models.Message(incident_id=r.incident_id, sender_id=s.id,
                           sender_role=s.role, text=texts[body.verdict]))
     db.commit()
+    # push участникам (best-effort, ошибки не роняют вердикт)
+    try:
+        push_svc.notify_participants(db, r.incident_id, s.id,
+                                     "Yo'l Guard: решение по ДТП",
+                                     texts[body.verdict])
+    except Exception:
+        pass
     return {"verdict": r.verdict, "sent_to_user": texts[body.verdict]}
+
+@router.get("/insurer/incidents")
+def insurer_incidents(db: Session = Depends(get_db),
+                      limit: int = Query(200, ge=1, le=500),
+                      _i: models.User = Depends(need_role("specialist", "insurer"))):
+    """Страховая: инциденты с готовым claim-пакетом (read-only)."""
+    rows = (db.query(models.Incident)
+            .join(models.ClaimPackage,
+                  models.ClaimPackage.incident_id == models.Incident.id)
+            .order_by(models.Incident.id.desc()).limit(limit).all())
+    out = []
+    for inc in rows:
+        claim = db.query(models.ClaimPackage).filter_by(incident_id=inc.id).first()
+        out.append({"id": inc.id, "code": inc.code, "status": inc.status,
+                    "eligibility": inc.eligibility,
+                    "occurred_at": str(inc.occurred_at),
+                    "package_hash": claim.package_hash if claim else None})
+    return out

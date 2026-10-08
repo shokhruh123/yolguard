@@ -67,6 +67,8 @@ def heuristic_reason(triage: dict, kinds: list[str]) -> dict:
         "casualties_note": ("Водитель отметил пострадавших — приоритет: скорая и ГАИ."
                             if has_injury else "По словам водителя, пострадавших нет."),
         "actions": actions,
+        "plates": {"a": "", "b": ""},
+        "damage_severity": "unknown",  # light|medium|heavy|unknown
     }
 
 
@@ -77,6 +79,9 @@ PROMPT = (
     "по какой части пришёлся удар у каждого авто, характер и примерная сила повреждений, "
     'и наиболее вероятный сценарий столкновения (кто куда двигался) — с оговоркой «предположительно»", '
     '"impact_summary": "одной строкой: куда пришёлся удар (напр. «передний бампер — левое крыло»)", '
+    '"plates": {"a": "госномер авто A если читается на фото, иначе \\"\\"", '
+    '"b": "госномер авто B если читается, иначе \\"\\""}, '
+    '"damage_severity": "light|medium|heavy|unknown — общая тяжесть видимых повреждений", '
     '"actions": ["практичный шаг 1", "шаг 2", "..."], '
     '"svg": "<svg ...>вид сверху: дорога, авто A и B в вероятных позициях, стрелки движения, точка контакта</svg>"}.\n'
     "ПРАВИЛА: число/наличие пострадавших НЕ выдумывай — бери только из переданного флага has_injury. "
@@ -86,12 +91,11 @@ PROMPT = (
 
 
 async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
-    """Возвращает {source, description, casualties_note, actions, svg}."""
+    """Возвращает {source, description, casualties_note, actions, svg, plates, damage_severity}."""
     base = heuristic_reason(triage, kinds)
     key = (getattr(settings, "GEMINI_API_KEY", "") or "").strip()
     if not key:
         return {"source": "heuristic (нет GEMINI_API_KEY)", **base, "svg": heuristic_svg()}
-
     parts: list[dict] = [{"text": PROMPT + f"\nДанные: {json.dumps(triage, ensure_ascii=False)}, фото: {kinds}"}]
     for img in images[:3]:
         parts.append({"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(img).decode()}})
@@ -125,12 +129,19 @@ async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
                         desc = f"{desc}\n\n🅰️🅱️ Удар: {impact}"
                     # SVG от LLM — чужой контент: убираем script/on* перед сохранением
                     svg_raw = str(data.get("svg") or heuristic_svg())
+                    plates = data.get("plates") or {}
+                    sev = str(data.get("damage_severity", "unknown")).lower()
+                    if sev not in ("light", "medium", "heavy"):
+                        sev = "unknown"
                     return {
                         "source": f"gemini:{model}",
                         "description": desc,
                         "casualties_note": base["casualties_note"],
                         "actions": list(data.get("actions", base["actions"])),
                         "svg": _sanitize_svg(svg_raw),
+                        "plates": {"a": str(plates.get("a", ""))[:20],
+                                   "b": str(plates.get("b", ""))[:20]},
+                        "damage_severity": sev,
                     }
                 except Exception as e:
                     # transient error -> retry once, then fall through to next model

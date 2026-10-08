@@ -46,6 +46,24 @@
        "header": [{"key": "Authorization", "value": "Bearer {{access}}"}]}},
     {"name": "admin-incident-detail",
      "request": {"method": "GET", "url": "{{base}}/api/v1/admin/incidents/{{incident_id}}",
-       "header": [{"key": "Authorization", "value": "Bearer {{access}}"}]}}
+       "header": [{"key": "Authorization", "value": "Bearer {{access}}"}]}},
+    {"name": "voice-note-upload",
+     "request": {"method": "POST", "url": "{{base}}/api/v1/incidents/{{incident_id}}/evidence-upload",
+       "header": [{"key": "Authorization", "value": "Bearer {{access}}"}],
+       "body": {"mode": "formdata",
+         "formdata": [{"key": "kind", "value": "voice_note", "type": "text"},
+                      {"key": "file", "type": "file", "src": "/path/to/note.mp3"}]}}},
+    {"name": "claim-package-read",
+     "request": {"method": "GET", "url": "{{base}}/api/v1/incidents/{{incident_id}}/claim-package",
+       "header": [{"key": "Authorization", "value": "Bearer {{access}}"}]}},
+    {"name": "insurer-incidents",
+     "request": {"method": "GET", "url": "{{base}}/api/v1/insurer/incidents",
+       "header": [{"key": "Authorization", "value": "Bearer {{access}}"}]}},
+    {"name": "push-subscribe",
+     "request": {"method": "POST", "url": "{{base}}/api/v1/push/subscribe",
+       "header": [{"key": "Content-Type", "value": "application/json"},
+                  {"key": "Authorization", "value": "Bearer {{access}}"}],
+       "body": {"mode": "raw",
+         "raw": "{\"endpoint\": \"https://example.com/push/1\", \"keys\": {\"p256dh\": \"...\", \"auth\": \"...\"}}"}}}
   ]
 }

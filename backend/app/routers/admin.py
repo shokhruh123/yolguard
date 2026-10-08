@@ -66,6 +66,21 @@ def incident_detail(iid: int, db: Session = Depends(get_db),
     claim = db.query(models.ClaimPackage).filter_by(incident_id=iid).first()
     review = db.query(models.ReviewCase).filter_by(incident_id=iid).first()
     users = {u.id: u.full_name for u in db.query(models.User).all()}
+    ai_block = None
+    if ai:
+        ai_block = {"source": ai.source, "description": ai.description,
+                    "casualties_note": ai.casualties_note,
+                    "actions": json.loads(ai.actions_json), "svg": ai.svg,
+                    "plates": {"a": "", "b": ""}, "damage_severity": "unknown"}
+        # свежие CV-поля (номера, тяжесть) — из последнего запуска в Mongo
+        try:
+            hist = mongo.get_ai_history(iid, 1)
+            if hist:
+                meta = hist[0].get("meta", {}) or {}
+                ai_block["plates"] = meta.get("plates", ai_block["plates"])
+                ai_block["damage_severity"] = meta.get("damage_severity", "unknown")
+        except Exception:
+            pass
     return {
         "incident": _brief(inc),
         "triage": {"has_injury": bool(inc.has_injury), "has_pedestrian": bool(inc.has_pedestrian),
@@ -79,15 +94,14 @@ def incident_detail(iid: int, db: Session = Depends(get_db),
                           "vehicle_id": p.vehicle_id, "confirmed": bool(p.confirmed)} for p in parts],
         "evidence": [{"id": e.id, "kind": e.kind,
                       "url": f"/api/v1/incidents/{iid}/evidence/{e.id}/file",
+                      "mime": e.mime or "",
                       "gps": [float(e.gps_lat) if e.gps_lat is not None else None,
                               float(e.gps_lon) if e.gps_lon is not None else None],
                       "sha256": e.sha256[:12]} for e in ev],
         "diagram": {"svg": dia.svg if dia else None,
                     "approved_a": bool(dia.approved_a) if dia else False,
                     "approved_b": bool(dia.approved_b) if dia else False},
-        "ai": ({"source": ai.source, "description": ai.description,
-                "casualties_note": ai.casualties_note,
-                "actions": json.loads(ai.actions_json), "svg": ai.svg} if ai else None),
+        "ai": ai_block,
         "claim": {"package_hash": claim.package_hash} if claim else None,
         "review": {"id": review.id, "verdict": review.verdict, "comment": review.comment} if review else None,
         "messages": [{"from_role": m.sender_role, "text": m.text, "at": str(m.created_at)}

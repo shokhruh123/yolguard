@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # Local file storage dir for photos/video/audio (metadata in SQL + Mongo).
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOADS_PER_INCIDENT: int = 30
+    # Web Push (VAPID). Empty = push disabled, app keeps polling fallback.
+    # Generate: py -c "from pywebpush import vapid; ..." (see docs, keys stay in .env)
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:admin@example.com"
+    # Anti-bruteforce sliding window. Tests disable it (single shared test IP).
+    RATE_LIMIT_ENABLED: bool = True
     # Explicit allow-list of browser origins (comma-separated in .env). Never "*".
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
 

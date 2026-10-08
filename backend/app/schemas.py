@@ -51,3 +51,11 @@ class MessageIn(BaseModel):
 
 class RefreshIn(BaseModel):
     token: str = Field(min_length=10, max_length=4096)
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=255)
+    auth: str = Field(min_length=10, max_length=255)
+
+class PushSubIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=2000)
+    keys: PushKeys

@@ -123,4 +123,14 @@ class Message(Base):
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
+class PushSubscription(Base):
+    """Web Push подписки (браузер/SW). По одной строке на endpoint."""
+    __tablename__ = "push_subscriptions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String(255), nullable=False)
+    auth = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
 Index("ix_evidence_incident_kind", Evidence.incident_id, Evidence.kind)

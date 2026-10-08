@@ -1,12 +1,15 @@
 """Modular monolith. Versioned API /api/v1. Frontend served as static demo."""
 import logging
 import os
-from fastapi import FastAPI
+import time
+from collections import defaultdict, deque
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import Base, engine, ensure_schema
-from .routers import auth, incidents, misc, admin
+from .routers import auth, incidents, misc, admin, push
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -31,6 +34,35 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(incidents.router, prefix="/api/v1")
 app.include_router(misc.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(push.router, prefix="/api/v1")
+
+# In-memory sliding-window rate limit (защита /auth и /join от брутфорса;
+# для prod всё равно ставить reverse proxy с лимитами).
+_RATE_LIMITS = [("/api/v1/auth/", 20, 60), ("/join", 10, 60),
+                ("/evidence-upload", 30, 60)]
+_hits: dict[str, deque] = defaultdict(deque)
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    path = request.url.path
+    key = None
+    if settings.RATE_LIMIT_ENABLED:
+        for prefix, limit, window in _RATE_LIMITS:
+            if prefix in path:
+                ip = (request.client.host if request.client else "?")
+                key = (ip, prefix, limit, window)
+                break
+    if key:
+        _, _, limit, window = key
+        now = time.monotonic()
+        q = _hits[str(key)]
+        while q and q[0] <= now - window:
+            q.popleft()
+        if len(q) >= limit:
+            return JSONResponse({"detail": "Too many requests, slow down"},
+                                status_code=429)
+        q.append(now)
+    return await call_next(request)
 
 # NOTE: /uploads is intentionally NOT mounted as public static files.
 # Evidence photos are served only through the auth-gated endpoint

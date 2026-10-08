@@ -7,6 +7,7 @@
 <meta name="description" content="Yo'l Guard — ассистент при ДТП: фото, разбор ИИ, Европротокол."/>
 <title>Yo'l Guard — ассистент при ДТП</title>
 <link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icons/icon-180.png"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="stylesheet" href="styles.css"/>
@@ -98,6 +99,12 @@
         <label class="camera" for="camInput">Сфотографировать</label>
         <input type="file" id="camInput" accept="image/*" capture="environment" hidden/>
         <div class="thumbs" id="thumbs"></div>
+        <p class="fine" id="evQueue" aria-live="polite"></p>
+        <div class="frow">
+          <label class="camera ghost" for="vidInput" style="text-align:center">🎥 Видео места</label>
+          <button class="ghost" id="btnRec">🎙 Голосовая заметка</button>
+        </div>
+        <input type="file" id="vidInput" accept="video/*" capture="environment" hidden/>
         <div class="frow">
           <select id="evKind">
             <option value="scene_overview">Общий план места</option>
@@ -162,6 +169,20 @@
         <input id="gPw" type="password" placeholder="Пароль" autocomplete="current-password"/>
         <button class="ghost" id="btnLogin">Войти</button>
       </div>
+      <div class="card">
+        <h3>Уведомления</h3>
+        <p class="hint">Push о вердикте и сообщениях вместо опроса. Нужны HTTPS или localhost.</p>
+        <p class="fine" id="pushState" aria-live="polite"></p>
+        <button class="ghost" id="btnPush">Включить уведомления</button>
+      </div>
+      <div class="card">
+        <h3>Язык / Til / Language</h3>
+        <div class="frow">
+          <button class="ghost langBtn" data-lang="ru">Русский</button>
+          <button class="ghost langBtn" data-lang="uz">O‘zbek</button>
+          <button class="ghost langBtn" data-lang="en">English</button>
+        </div>
+      </div>
     </section>
     <!-- ADMIN -->
     <section class="screen" id="scr-admin">
@@ -208,6 +229,7 @@
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="app.js" defer></script>
+<script src="i18n.js" defer></script>
 <script src="ui.js" defer></script>
 </body>
 </html>

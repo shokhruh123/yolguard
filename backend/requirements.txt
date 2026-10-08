@@ -1,11 +1,14 @@
 fastapi>=0.115
 uvicorn[standard]>=0.34
-sqlalchemy>=2.0
+# Pinned: 2.1.x cp314 C-extension wheels fail DLL load on this Win machine;
+# 2.0.54 verified working (same 2.0 ORM API used by the project).
+SQLAlchemy==2.0.54
 pydantic>=2.9
 pydantic-settings>=2.7
 python-jose[cryptography]>=3.3
 python-multipart>=0.0.20
 pymongo>=4.8
+pywebpush>=1.14
 Pillow>=10.4
 pytest>=8.3
 httpx>=0.28

@@ -1,7 +1,8 @@
 """Test config: keep the suite fast and offline-deterministic by disabling the
 real Gemini call. The AI service falls back to its heuristic path when there is
 no key, so tests exercise the full flow without hitting the network.
-Real Gemini is tested separately/manually, not in the unit suite."""
+Real Gemini is tested separately/manually, not in the unit suite.
+Rate limiting is also disabled: the whole suite shares one TestClient IP."""
 import pytest
 from app.config import settings
 
@@ -12,3 +13,11 @@ def _no_live_ai():
     settings.GEMINI_API_KEY = ""
     yield
     settings.GEMINI_API_KEY = saved
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_rate_limit():
+    saved = settings.RATE_LIMIT_ENABLED
+    settings.RATE_LIMIT_ENABLED = False
+    yield
+    settings.RATE_LIMIT_ENABLED = saved
