@@ -44,11 +44,16 @@ def list_incidents(db: Session = Depends(get_db),
         q = q.filter_by(eligibility=eligibility)
     if search.strip():
         like = f"%{search.strip().upper()}%"
-        plate_iids = [r[0] for r in
-                      db.query(models.Participant.incident_id)
-                      .join(models.Vehicle,
-                            models.Vehicle.id == models.Participant.vehicle_id)
-                      .filter(models.Vehicle.plate.ilike(like)).distinct().all()]
+        # госномер: либо прямо на участии, либо вообще у водителя-участника
+        # (машину могли сохранить в гараж уже после создания случая)
+        direct = db.query(models.Participant.incident_id).join(
+            models.Vehicle, models.Vehicle.id == models.Participant.vehicle_id
+        ).filter(models.Vehicle.plate.ilike(like)).distinct().all()
+        owned = db.query(models.Participant.incident_id).join(
+            models.User, models.User.id == models.Participant.user_id
+        ).join(models.Vehicle, models.Vehicle.owner_id == models.User.id
+               ).filter(models.Vehicle.plate.ilike(like)).distinct().all()
+        plate_iids = list({r[0] for r in direct} | {r[0] for r in owned})
         q = q.filter(or_(models.Incident.code.ilike(like),
                          models.Incident.id.in_(plate_iids) if plate_iids else False))
     total = q.count()
