@@ -5,8 +5,12 @@ import asyncio
 import base64
 import html
 import json
+import logging
+import time
 import httpx
 from ..config import settings
+
+log = logging.getLogger("yolguard.ai")
 
 # Model fallback chain: first that answers wins. Guards against a model being
 # retired (404), overloaded (503) or rate-limited (429) — exactly what broke
@@ -20,28 +24,56 @@ def _model_url(model: str) -> str:
 
 
 def heuristic_svg(label_a: str = "A", label_b: str = "B", impact: str = "") -> str:
-    """Эвристическая схема: точка контакта и подпись зависят от слов водителя
+    """Дорожная сцена сверху: асфальт, разметка, два авто, стрелка движения,
+    звезда контакта. Точка контакта и подпись зависят от слов водителя
     (impact_part), поэтому схема НЕ одинаковая для всех случаев."""
-    la, lb = html.escape(label_a)[:12], html.escape(label_b)[:12]
-    seed = sum(ord(ch) for ch in (impact or "")) % 120
-    cx = 150 + seed  # точка контакта гуляет по дороге
-    cap = html.escape((impact or "").strip())[:40]
-    cap_svg = (f'<text x="200" y="200" fill="#9aa7bd" font-size="12" text-anchor="middle">{cap}</text>'
+    la, lb = html.escape(label_a[:12]), html.escape(label_b[:12])
+    seed = sum(ord(ch) for ch in (impact or "")) % 110
+    cx = 155 + seed  # звезда контакта гуляет вдоль дороги
+    cap = html.escape((impact or "").strip()[:40])
+    cap_svg = (f'<text x="200" y="248" fill="#9aa7bd" font-size="12" text-anchor="middle">{cap}</text>'
                if cap else "")
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220">'
-        '<rect width="400" height="220" fill="#0e1626"/>'
-        '<rect y="70" width="400" height="80" fill="#1a2540"/>'
-        '<line x1="0" y1="110" x2="400" y2="110" stroke="#f5a524" stroke-width="2" stroke-dasharray="12 8"/>'
-        '<rect x="10" y="20" width="26" height="26" fill="#24314d"/><text x="23" y="38" fill="#9aa7bd" font-size="16" text-anchor="middle">P</text>'
-        f'<rect x="80" y="76" width="86" height="30" rx="6" fill="#2b60a0"/><text x="123" y="96" fill="#fff" font-size="14" text-anchor="middle">{la}</text>'
-        '<line x1="166" y1="91" x2="206" y2="91" stroke="#22c07a" stroke-width="3" marker-end="url(#ah)"/>'
-        f'<rect x="228" y="104" width="86" height="30" rx="6" fill="#c0392b"/><text x="271" y="124" fill="#fff" font-size="14" text-anchor="middle">{lb}</text>'
-        '<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">'
-        '<path d="M0,0 L8,4 L0,8" fill="none" stroke="#22c07a" stroke-width="2"/></marker></defs>'
-        f'<circle cx="{cx}" cy="100" r="9" fill="none" stroke="#f5a524" stroke-width="3"/>'
-        f'<circle cx="{cx}" cy="100" r="3" fill="#f5a524"/>'
-        f'<text x="{cx}" y="160" fill="#9aa7bd" font-size="12" text-anchor="middle">предполагаемая точка контакта</text>'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260" viewBox="0 0 400 260">'
+        '<rect width="400" height="260" fill="#22252d"/>'
+        '<rect y="0" width="400" height="46" fill="#243020"/>'
+        '<rect y="214" width="400" height="46" fill="#243020"/>'
+        '<rect y="46" width="400" height="168" fill="#414754"/>'
+        '<rect y="50" width="400" height="4" fill="#d8dce3"/>'
+        '<rect y="206" width="400" height="4" fill="#d8dce3"/>'
+        '<line x1="0" y1="130" x2="400" y2="130" stroke="#f5a524" stroke-width="3" stroke-dasharray="16 12"/>'
+        # авто A: вид сверху
+        '<g transform="translate(115,98) rotate(-8)">'
+        '<rect x="-14" y="-24" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="-14" y="16" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="36" y="-24" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="36" y="16" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="-46" y="-17" width="92" height="34" rx="9" fill="#2b60a0"/>'
+        '<rect x="6" y="-13" width="26" height="26" rx="4" fill="#1b3a63"/>'
+        '<rect x="-40" y="-13" width="8" height="7" rx="2" fill="#ffe9a8"/>'
+        '<rect x="-40" y="6" width="8" height="7" rx="2" fill="#ffe9a8"/>'
+        f'<text x="0" y="6" fill="#fff" font-size="15" font-weight="bold" text-anchor="middle">{la}</text>'
+        '</g>'
+        # авто B: вид сверху
+        '<g transform="translate(265,158) rotate(6)">'
+        '<rect x="-14" y="-24" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="-14" y="16" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="36" y="-24" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="36" y="16" width="10" height="8" rx="2" fill="#14161b"/>'
+        '<rect x="-46" y="-17" width="92" height="34" rx="9" fill="#c0392b"/>'
+        '<rect x="-32" y="-13" width="26" height="26" rx="4" fill="#7c241a"/>'
+        '<rect x="38" y="-13" width="8" height="7" rx="2" fill="#ffe9a8"/>'
+        '<rect x="38" y="6" width="8" height="7" rx="2" fill="#ffe9a8"/>'
+        f'<text x="0" y="6" fill="#fff" font-size="15" font-weight="bold" text-anchor="middle">{lb}</text>'
+        '</g>'
+        # стрелка движения B
+        '<line x1="350" y1="192" x2="292" y2="172" stroke="#e74c3c" stroke-width="5" marker-end="url(#ah2)"/>'
+        '<defs><marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">'
+        '<path d="M0,0 L9,4.5 L0,9" fill="none" stroke="#e74c3c" stroke-width="2.5"/></marker></defs>'
+        # звезда контакта
+        f'<polygon points="{cx},{108} {cx+5},{121} {cx+18},{121} {cx+8},{129} {cx+12},{142} {cx},{134} {cx-12},{142} {cx-8},{129} {cx-18},{121} {cx-5},{121}" fill="#f5a524"/>'
+        f'<text x="{cx}" y="100" fill="#f5a524" font-size="11" text-anchor="middle">удар</text>'
+        '<text x="200" y="30" fill="#9aa7bd" font-size="12" text-anchor="middle">вид сверху · черновик, не юридический факт</text>'
         f'{cap_svg}'
         "</svg>"
     )
@@ -112,51 +144,54 @@ async def analyze(triage: dict, kinds: list[str], images: list[bytes]) -> dict:
     payload = {"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.2}}
 
     last_err = "no model answered"
-    async with httpx.AsyncClient(timeout=60) as client:
+    t_start = time.monotonic()
+    async with httpx.AsyncClient(timeout=20) as client:
         for model in GEMINI_MODELS:
-            for _attempt in range(2):  # one retry on transient overload
-                try:
-                    r = await client.post(f"{_model_url(model)}?key={key}", json=payload)
-                    if r.status_code in (429, 503):  # overloaded -> retry, then next model
-                        last_err = f"{model}: {r.status_code}"
-                        await asyncio.sleep(1.5)
-                        continue
-                    if r.status_code == 404:  # model retired -> next model
-                        last_err = f"{model}: 404"
-                        break
-                    r.raise_for_status()
-                    try:
-                        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    except (KeyError, IndexError, TypeError, ValueError):
-                        # safety-block / unexpected shape — treat as model failure
-                        last_err = f"{model}: bad_response"
-                        break
-                    start, end = text.find("{"), text.rfind("}")
-                    data = json.loads(text[start:end + 1]) if start >= 0 else {}
-                    desc = str(data.get("description", base["description"]))
-                    impact = str(data.get("impact_summary", "")).strip()
-                    if impact:
-                        desc = f"{desc}\n\n🅰️🅱️ Удар: {impact}"
-                    # SVG от LLM — чужой контент: убираем script/on* перед сохранением
-                    svg_raw = str(data.get("svg") or heuristic_svg(impact=impact))
-                    plates = data.get("plates") or {}
-                    sev = str(data.get("damage_severity", "unknown")).lower()
-                    if sev not in ("light", "medium", "heavy"):
-                        sev = "unknown"
-                    return {
-                        "source": f"gemini:{model}",
-                        "description": desc,
-                        "casualties_note": base["casualties_note"],
-                        "actions": list(data.get("actions", base["actions"])),
-                        "svg": _sanitize_svg(svg_raw),
-                        "plates": {"a": str(plates.get("a", ""))[:20],
-                                   "b": str(plates.get("b", ""))[:20]},
-                        "damage_severity": sev,
-                    }
-                except Exception as e:
-                    # transient error -> retry once, then fall through to next model
-                    last_err = f"{model}: {type(e).__name__}"
-                    await asyncio.sleep(1.5)
+            try:
+                r = await client.post(f"{_model_url(model)}?key={key}", json=payload)
+                if r.status_code in (429, 503):  # overloaded -> next model
+                    last_err = f"{model}: {r.status_code}"
+                    log.warning("ai %s overloaded (%s), next model", model, r.status_code)
                     continue
+                if r.status_code == 404:  # model retired -> next model
+                    last_err = f"{model}: 404"
+                    log.warning("ai %s retired (404), next model", model)
+                    continue
+                r.raise_for_status()
+                try:
+                    text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError, ValueError):
+                    # safety-block / unexpected shape — treat as model failure
+                    last_err = f"{model}: bad_response"
+                    log.warning("ai %s bad response shape", model)
+                    continue
+                start, end = text.find("{"), text.rfind("}")
+                data = json.loads(text[start:end + 1]) if start >= 0 else {}
+                desc = str(data.get("description", base["description"]))
+                impact = str(data.get("impact_summary", "")).strip()
+                if impact:
+                    desc = f"{desc}\n\n🅰️🅱️ Удар: {impact}"
+                # SVG от LLM — чужой контент: убираем script/on* перед сохранением
+                svg_raw = str(data.get("svg") or heuristic_svg(impact=impact))
+                plates = data.get("plates") or {}
+                sev = str(data.get("damage_severity", "unknown")).lower()
+                if sev not in ("light", "medium", "heavy"):
+                    sev = "unknown"
+                log.info("ai answered via %s in %.1fs", model, time.monotonic() - t_start)
+                return {
+                    "source": f"gemini:{model}",
+                    "description": desc,
+                    "casualties_note": base["casualties_note"],
+                    "actions": list(data.get("actions", base["actions"])),
+                    "svg": _sanitize_svg(svg_raw),
+                    "plates": {"a": str(plates.get("a", ""))[:20],
+                               "b": str(plates.get("b", ""))[:20]},
+                    "damage_severity": sev,
+                }
+            except Exception as e:
+                last_err = f"{model}: {type(e).__name__}"
+                log.warning("ai %s failed: %s", model, type(e).__name__)
+                continue
+    log.warning("ai fallback to heuristic: %s", last_err)
     return {"source": f"heuristic (Gemini недоступен: {last_err})", **base,
             "svg": heuristic_svg(impact=impact)}

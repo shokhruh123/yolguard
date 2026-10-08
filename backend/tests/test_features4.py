@@ -90,6 +90,14 @@ def test_heuristic_svg_varies_by_impact():
     assert c != a
 
 
+def test_road_scene_elements():
+    from app.services.ai import heuristic_svg
+    svg = heuristic_svg(label_a="A", label_b="B", impact="Левый бок")
+    for needle in ("<polygon", "вид сверху", ">A<", ">B<", "удар", "marker"):
+        assert needle in svg, needle
+    assert "<script" not in svg
+
+
 def test_insurer_read_only():
     drv, _ = _reg(f"+99890203{int(time.time()) % 100000:05d}")
     iid = _inc(drv)

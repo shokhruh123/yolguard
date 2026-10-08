@@ -260,16 +260,22 @@ let aiLoadedFor = 0;
 async function loadAI() {
   if (!INC || aiLoadedFor === INC.id) return;
   aiLoadedFor = INC.id;
-  $("aiBox").textContent = TT("ai_loading");
   $("aiRetry").style.display = "none";
-  const res = await api("/incidents/" + INC.id + "/ai-analysis", {method: "POST"});
-  if (!res.ok) {
-    $("aiBox").textContent = TT("ai_down");
-    $("aiRetry").style.display = "";
-    aiLoadedFor = 0;
-    return;
-  }
-  const j = res.json;
+  $("aiBox").textContent = TT("ai_loading");
+  const stages = [TT("ai_loading"), TT("ai_stage2"), TT("ai_stage3")];
+  let si = 0;
+  const tick = setInterval(() => {
+    si = Math.min(si + 1, stages.length - 1);
+    if (aiLoadedFor === INC.id) $("aiBox").textContent = stages[si];
+  }, 12000);
+  const ctl = new AbortController();
+  const killer = setTimeout(() => ctl.abort(), 90000);
+  try {
+    const r = await fetch(API + "/incidents/" + INC.id + "/ai-analysis", {
+      method: "POST", headers: hdr(), signal: ctl.signal});
+    clearTimeout(killer); clearInterval(tick);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
   $("aiBox").innerHTML = j.svg || "";
   const sevMap = TTArr("severities") ? TT("severities") : null;
   const sevRu = (sevMap && sevMap[j.damage_severity]) || "";
@@ -283,6 +289,12 @@ async function loadAI() {
     + `<br/><b>${esc(TT("ai_sev"))}</b> ${esc(sevRu)}`
     + `<br/><b>${esc(TT("d_todo"))}</b><ul class="ai-actions">`
     + `${(j.actions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>`;
+  } catch (err) {
+    clearTimeout(killer); clearInterval(tick);
+    $("aiBox").textContent = (err && err.name === "AbortError") ? TT("ai_timeout") : TT("ai_down");
+    $("aiRetry").style.display = "";
+    aiLoadedFor = 0;
+  }
 }
 $("aiRetry").onclick = () => { aiLoadedFor = 0; loadAI(); };
 

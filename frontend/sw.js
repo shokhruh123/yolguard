@@ -1,5 +1,5 @@
 /* Yo'l Guard service worker: app-shell offline + Web Push. */
-const VER = "yg-v4";
+const VER = "yg-v5";
 const SHELL = ["./", "index.html", "app.js", "ui.js", "styles.css",
   "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 

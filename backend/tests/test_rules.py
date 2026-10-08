@@ -4,6 +4,13 @@ def test_red_on_injury():
     c, _ = evaluate(Triage(has_injury=True))
     assert c == "red"
 
+def test_red_reason_waits_for_officer():
+    # решение принимает ТОЛЬКО сотрудник: никаких автоматических «наряд выезжает»
+    _, reason = evaluate(Triage(has_injury=True))
+    assert "сотрудник" in reason
+    assert "Дождитесь ответа" in reason
+    assert "вызовите 102" not in reason
+
 def test_red_single_vehicle_rule():
     c, _ = evaluate(Triage(vehicle_count=1, responsibility_accepted=True, docs_valid=True, sober=True, damage_agreed=True))
     assert c == "red"

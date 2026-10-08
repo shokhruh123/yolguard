@@ -1,5 +1,5 @@
 """Incident flow: create -> triage -> evidence -> diagram -> claim package."""
-import hashlib, html, json, os, re, secrets, time
+import hashlib, json, os, re, secrets, time
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query, Header
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -136,13 +136,9 @@ def make_diagram(iid: int, body: schemas.DiagramIn, db: Session = Depends(get_db
                  u: models.User = Depends(current_user)):
     inc = db.get(models.Incident, iid)
     if not inc: raise HTTPException(404, "Not found")
-    # метки — пользовательский ввод: экранируем перед вставкой в SVG (stored XSS)
-    la, lb = html.escape(body.label_a), html.escape(body.label_b)
-    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">'
-           f'<rect width="400" height="200" fill="#eef"/><line x1="0" y1="100" x2="400" y2="100" stroke="#333" stroke-dasharray="8 6"/>'
-           f'<rect x="90" y="60" width="80" height="36" fill="#2b60a0"/><text x="130" y="83" fill="#fff" text-anchor="middle">{la}</text>'
-           f'<rect x="230" y="104" width="80" height="36" fill="#c0392b"/><text x="270" y="127" fill="#fff" text-anchor="middle">{lb}</text>'
-           f'<circle cx="180" cy="100" r="5" fill="#f39c12"/></svg>')
+    # та же дорожная сцена, что рисует ИИ: метки экранированы, зона удара — из слов водителя
+    from ..services.ai import heuristic_svg
+    svg = heuristic_svg(body.label_a, body.label_b, inc.impact_part or "")
     d = db.query(models.Diagram).filter_by(incident_id=iid).first()
     if d: d.svg = svg
     else: db.add(models.Diagram(incident_id=iid, svg=svg))
