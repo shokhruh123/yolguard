@@ -1,83 +1,62 @@
 # Yo'l Guard — AI Accident Resolution (MVP)
 
 ## 1. Что это
-Смартфон-ассистент при мелком ДТП: регистрация → фото с камеры → авто-анализ ИИ (Gemini: текст + схема) → ответ сотрудника в приложение. Метрика: время до освобождения полосы.
+Смартфон-ассистент при мелком ДТП: регистрация → фото/видео/голосовые → авто-анализ ИИ (Gemini: текст + номера + тяжесть + схема) → ответ сотрудника в приложение. Метрика: время до освобождения полосы.
 
-**Флоу:** сфоткал → ИИ анализирует сам (без кнопок) → видишь схему, довод, фото → сотрудник жмёт 1 из 2 кнопок («Зарегистрировано, агенты едут» / «Агенты едут, ждите») → текст приходит тебе. Твои кнопки «Понял, жду» / «Нужна помощь» уходят сотруднику.
+**Флоу:** сфоткал → ИИ анализирует сам (с прогрессом и повтором) → видишь схему-дорогу, разбор, номера, тяжесть → сотрудник в EXE-панели жмёт «🚓 Выезжаем» или «✅ Зарегистрировано» → текст приходит тебе в шаг 4. Твои кнопки «Понял, жду» / «Нужна помощь» уходят сотруднику. Подтверждения второго водителя НЕ требуется — хватает подтверждения создателя.
 
-**Готовые файлы:** `YolGuard-v1.2-release.apk` (Android, подписан release-ключом), `admin/dist/YolGuardAdmin.exe` (панель сотрудника, с фото-превью), `frontend/` (веб+мобильная вёрстка + веб-админка).
-**Проверено:** pytest 23/23 (E2E флоу + 13 security-тестов), release-APK v1.2 подписан и проверен `apksigner`, EXE пересобран (с Pillow), `node --check` по JS чист, реальный Gemini-vision разбор фото проверен вручную.
-**Gemini:** ключ в `backend/.env`. Разбор ДТП по фото работает (см. ниже). Без ключа — эвристика с пометкой.
-
-## Разбор ИИ по фото (чинено 2026-10-01)
-Модель `gemini-2.5-flash` была снята с публикации (ответ 404) — поэтому ИИ молча падал в эвристику. Теперь `services/ai.py` перебирает цепочку моделей **`gemini-flash-latest → gemini-flash-lite-latest → gemini-3-flash-preview`**: первая ответившая выигрывает, при 404/503/429 берётся следующая. Авторизация — `?key=` (не Bearer). Промпт просит обширный разбор: какие ТС, по какой части пришёлся удар, вероятный сценарий, сила повреждений — с оговоркой «предположительно». Число пострадавших ИИ **не выдумывает** (берёт из triage). Схема (SVG) и текст — черновик.
-Переопределить модель: `GEMINI_MODEL=...` в `.env`. В тестах реальный вызов отключён (`tests/conftest.py`), чтобы суд был быстрым и оффлайн.
-
-## Админ-панель сотрудника (web + EXE)
-Сотрудник в досье видит: **фото-превью внутри** (не ссылки; web — `<img ?token=>`, EXE — через Pillow), **схему ИИ** (web — встроенный SVG, EXE — кнопка «Открыть схему ИИ» в браузере), данные водителя (пострадавшие, часть удара, комментарий), **текст-разбор ИИ**, переписку и **2 кнопки**: «✅ Регистрация завершена» (approved) и «🚓 Выезжаем для проверки» (needs_field). Новые поля triage (`impact_part`, `driver_comment`, `injured_count`) водитель вводит на шаге проверки.
-
-## Что изменилось — итерация 2, блок P0 (безопасность и баги)
-1. **`/uploads/` закрыт.** Публичная статика убрана. Фото отдаются только через `GET /api/v1/incidents/{iid}/evidence/{eid}/file` по JWT и только участникам инцидента + specialist/admin. Чужая ссылка → **403**, без токена → **401**. Токен принимается в заголовке `Authorization` или в `?token=` (для тегов `<img>`).
-2. **Валидация загрузок.** Только JPEG/PNG/WEBP по **magic bytes** (не по имени/Content-Type), лимит **10 МБ**, серверный ресайз до **1600px**, EXIF-GPS сохраняется в БД (`evidence.gps_lat/gps_lon`). Битый файл с JPEG-магией → 400.
-3. **CORS и SECRET_KEY.** CORS — явный список origins из `.env` (`CORS_ORIGINS`), без `*`. `SECRET_KEY` обязателен (≥32 символов, не плейсхолдер) — при дефолтном backend **не стартует** (fail-fast в `config.py`).
-4. **APK release.** Подпись через `keystore.properties` (git-ignored), иконка-щит (янтарь на off-black) во всех mipmap-плотностях, `versionCode 1→2`, `versionName 1.1`.
-5. **Тесты.** `tests/test_security.py` — отдельный тест на каждый фикс (чужое фото, тип файла, размер, CORS, SECRET_KEY).
+**Готовое:** `android/app/build/outputs/apk/debug/app-debug.apk` (WebView, синхронизирован с `frontend/`), `admin/dist/YolGuardAdmin.exe` (панель сотрудника: досье, фото, ИИ, 2 кнопки + пакет + перезапуск ИИ), `frontend/` (PWA: офлайн-очередь, ru/uz/en, диктофон, проверка качества фото).
+**Проверено:** pytest 45/45, debug-APK собирается, EXE пересобирается, `node --check` чист, живой разбор Gemini по фото проверен (отвечает ~15–30 сек).
 
 ## 2. Архитектура (modular monolith)
-`FastAPI /api/v1` + `routers/{auth,incidents,misc,admin}`, `services/{rules,ai}`. APK = WebView-обёртка над `frontend/` + тот же API. EXE = tkinter-клиент к тому же API.
+`FastAPI /api/v1` + `routers/{auth,incidents,misc,admin,push}`, `services/{rules,ai,images,push}`, SQLAlchemy + опциональный MongoDB. APK = WebView-обёртка над `frontend/`. EXE = tkinter-клиент. Сотрудник работает ТОЛЬКО в EXE (в web/mobile staff-UI нет).
 
-## 2. Архитектура (modular monolith)
-`FastAPI /api/v1` + модули `routers/`, `services/rules.py`, SQLAlchemy. Почему монолит: MVP, одна команда, нет нужды в orchestration. Каждый модуль с четкой границей; CV/parts/repair — отдельные будущие модули.
+```
+Backend / API  →  SQL (users, incidents, evidence-мета, claim, review) + MongoDB (история ИИ, события)
+               →  File Storage (uploads/: фото/видео MP4/аудио, только по JWT)
+```
 
-## 3. ER (текст)
-users 1:N vehicles, users 1:N incidents(creator), incidents 1:N participants/evidence, incidents 1:1 diagrams/claim_packages/review_cases. 3NF: факты разделены, транзитивных зависимостей нет.
+## 3. Данные
+**SQL (источник истины):** users/roles (driver|specialist|admin|insurer), vehicles (plate unique), incidents (code, status, triage, eligibility), participants (A|B + авто), evidence (kind, sha256, mime, size, gps), diagrams, claim_packages, review_cases, ai_analyses (последний итог), messages, push_subscriptions.
+**MongoDB (MONGODB_URI пуст = выключена, всё работает):** каждый запуск ИИ целиком, audit-события, CV-мета файлов. Чтение: `GET /incidents/{id}/ai-history`.
 
 ## 4. Запуск
 ```powershell
 cd C:\Users\WnlyPC\Downloads\yolguard\backend
-py -m uvicorn app.main:app --port 8002
-python -m pytest -q
+.\.venv\Scripts\python -m pytest -q        # 45 тестов
+.\.venv\Scripts\python -m uvicorn app.main:app --port 8002
 ```
-- Веб: открыть `../frontend/index.html`, API=`http://127.0.0.1:8002/api/v1`
-- APK: скинуть `YolGuard-v1.0-debug.apk` на телефон, установить; в приложении (Гараж → Сервер API) указать `http://IP-ПК:8002/api/v1` (телефон и ПК в одном Wi-Fi). Backend должен быть запущен на ПК.
-- EXE: запустить `admin/dist/YolGuardAdmin.exe`, API=`http://127.0.0.1:8002/api/v1`, войти специалистом.
-- Пересборка APK (release, подписанный):
-  ```powershell
-  cd android
-  # 1) один раз — создать keystore (пароль сохранить в менеджере паролей!):
-  keytool -genkeypair -v -keystore yolguard-release.jks -alias yolguard -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Yol Guard, O=Yol Guard, C=UZ"
-  # 2) прописать пароли в android/keystore.properties (storeFile/storePassword/keyAlias/keyPassword), файл НЕ коммитить
-  # 3) сборка (Gradle 8.10 + AGP 8.5.2 требуют JDK 17–21; системный JDK 25 не подходит):
-  ..\android-sdk\gradle-8.10\bin\gradle :app:assembleRelease --no-daemon
-  ```
-  Путь к JDK задан в `android/gradle.properties` (`org.gradle.java.home`). Выход: `app/build/outputs/apk/release/app-release.apk`.
-- Пересборка EXE: `cd admin` + `py -3 -m PyInstaller YolGuardAdmin.spec --noconfirm`.
+- Веб: `http://127.0.0.1:8002/app/` (НЕ двойным кликом по index.html — будет CORS). API по умолчанию `http://127.0.0.1:8002/api/v1`
+- Демо-вход: водитель `+998900000011` / `driver123`; сотрудник `+998900000002` / `spec1234`; админ `+998900000001` / `admin123`
+- Токен живёт 30 мин, дальше приложение само обновляет сессию (refresh 7 дней). Протух совсем — войди заново.
+- APK: в приложении (Гараж → Сервер API) указать `http://IP-ПК:8002/api/v1`, один Wi-Fi с ПК.
+- EXE: запустить `admin/dist/YolGuardAdmin.exe`, войти специалистом → «Обновить список» (поиск: код или госномер).
+- Сборка APK: `cd android` + `..\android-sdk\gradle-8.10\bin\gradle :app:assembleDebug --no-daemon` (JDK 21 из `android/.jdk`, путь в `gradle.properties`).
+- Сборка EXE: `cd admin` + `..\backend\.venv\Scripts\python -m PyInstaller YolGuardAdmin.spec --noconfirm` (старый EXE перед этим закрыть!).
+- Окружение: `backend/.venv` (создать: `py -m venv .venv` + `pip install -r requirements.txt`). Важно: requirements пинит `SQLAlchemy==2.0.54` — колёса 2.1.x не грузятся на этой Windows-машине.
 
-## 5. API /api/v1
-- POST /auth/register {phone,password,full_name} → 201 {user,access,refresh} | 409
-- POST /auth/login → {user,access,refresh} | 401
-- POST /auth/refresh → {access}
-- POST /vehicles (Bearer) → 201 | 409
-- POST /incidents → {id,code}
-- POST /incidents/{id}/join?code= → side B | 404/409
-- POST /incidents/{id}/triage (TriageIn) → {eligibility green|yellow|red, reason}
-- POST /incidents/{id}/evidence {kind,file_path} → {sha256, completeness%}
-- POST /incidents/{id}/evidence-upload (Bearer, multipart: kind+file) → валидирует JPEG/PNG/WEBP ≤10 МБ, ресайз 1600px, EXIF-GPS→БД → {evidence_id, url, gps, completeness, ai}
-- GET /incidents/{id}/evidence/{eid}/file (Bearer или ?token=) → фото; 401 без токена, 403 чужому
-- POST /incidents/{id}/diagram → {svg + disclaimer}
-- POST /incidents/{id}/confirm → {confirmed}
-- POST /incidents/{id}/claim-package (specialist) → {package_hash} | 400 если нет подтверждений
-- GET /reviews/queue, POST /reviews/{id} (specialist)
+## 5. API /api/v1 (главное)
+- POST /auth/register, /auth/login → {user,access,refresh}; POST /auth/refresh {"token"} → {access}
+- POST /incidents → {id,code} (авто водителя привязывается само); POST /incidents/{id}/join?code=
+- POST /incidents/{id}/triage → {eligibility green|yellow|red, reason} (red = случай у сотрудника, жди письма)
+- POST /incidents/{id}/evidence-upload (kind+file: JPEG/PNG/WEBP ≤10МБ, MP4/WEBM ≤50МБ, аудио ≤10МБ) → {evidence_id, url, ai{source,description,plates,damage_severity,svg}}
+- GET /incidents/{iid}/evidence/{eid}/file (Bearer или ?token=) | GET /incidents/{id}/ai-history
+- POST /incidents/{id}/diagram, /confirm (создатель), /claim-package (specialist, нужно подтверждение создателя), GET .../claim-package (чтение: участники+specialist+insurer)
+- GET/POST /incidents/{id}/messages; GET /insurer/incidents (insurer read-only)
+- GET /reviews/queue, POST /reviews/{id} {approved|needs_field|rejected} (только из pending; reject с комментарием)
+- GET /admin/stats, GET /admin/incidents?skip&limit&status&eligibility&search= (код/госномер), GET /admin/incidents/{id}, POST /admin/incidents/{id}/message
+- GET /push/vapid-key, POST /push/subscribe|unsubscribe (Web Push; без VAPID-ключей — polling)
+- GET /health
 
 ## 6. Security
-## 6. Security
-PBKDF2-HMAC-SHA256 (200k итераций) для паролей, JWT с exp + Bearer, RBAC (driver/specialist/admin/insurer), Pydantic-валидация, параметризованные запросы SQLAlchemy (no SQLi), секреты в `.env`, sha256-цепочка evidence→claim.
-**P0-ужесточение:** фото за JWT (403 чужим), валидация загрузок по magic bytes + лимит 10 МБ + ресайз, CORS по белому списку (без `*`), fail-fast при слабом `SECRET_KEY`, release-подпись APK через git-ignored keystore. Rate-limit — на reverse proxy (todo prod).
+PBKDF2 200k + JWT typ access/refresh + RBAC (admin bypass), allow-list видов файлов по magic bytes, kind allow-list (anti-traversal), XSS-санитайзер SVG/меток, CORS allow-list (без `*`), SECRET_KEY fail-fast ≥32, rate-limit /auth//join/upload (429), фото только участникам+staff, claim только specialist, insurer только чтение. Секреты только в `backend/.env` (git-ignored). Тесты глушат живой Gemini и чистят за собой dev-БД.
 
 ## 7. Структура
 ```
-yolguard/backend/app/{main,config,db,models,schemas,security,routers/{auth,incidents,misc,deps},services/rules}.py
-yolguard/backend/{seed.py,requirements.txt,.env.example,tests/}
-yolguard/frontend/{index.html,app.js,styles.css}
-yolguard/postman/*.json
+yolguard/backend/app/{main,config,db,mongo,models,schemas,security,routers/{auth,incidents,misc,admin,push},services/{rules,ai,images,push}}.py
+yolguard/backend/{seed.py,requirements.txt,.env.example,tests/, .venv/}
+yolguard/frontend/{index.html,app.js,i18n.js,sw.js,ui.js,styles.css,manifest.json,icons/}
+yolguard/android/app/src/main/{java/.../MainActivity.java,assets/www (=копия frontend/),res/xml/file_paths.xml}
+yolguard/admin/{admin_app.py,YolGuardAdmin.spec,dist/YolGuardAdmin.exe(git-ignored)}
+yolguard/postman/*.json  yolguard/*.docx  yolguard/*.pptx
 ```
